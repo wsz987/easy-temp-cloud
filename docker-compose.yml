@@ -8,6 +8,7 @@ services:
       LISTEN_ADDR: ":8080"
       DATA_DIR: "/data"
       PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:18000}"
+      AUTH_PASSWORD: "${AUTH_PASSWORD:?AUTH_PASSWORD is required}"
       MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-10GiB}"
       MAX_STORAGE_BYTES: "${MAX_STORAGE_BYTES:-10GiB}"
       RETENTION: "${RETENTION:-1d}"

@@ -24,7 +24,7 @@
    cp .env.example .env
    ```
 
-2. 按需编辑 `.env`，至少将 `PUBLIC_BASE_URL` 改为外部可访问的地址（详见下方[环境变量说明](#环境变量说明)）。
+2. 按需编辑 `.env`，将 `PUBLIC_BASE_URL` 改为外部可访问的地址，并设置 6-16 位的 `AUTH_PASSWORD`（详见下方[环境变量说明](#环境变量说明)）。
 
 3. 构建镜像并后台启动：
 
@@ -39,7 +39,7 @@
    docker compose logs -f
    ```
 
-5. 网页上传入口为 `http://你的服务器地址:18000/`。兼容的单请求 API 为 `/api/upload`；网页大文件上传使用标准 tus 端点 `/api/uploads/`。
+5. 网页上传入口为 `http://你的服务器地址:18000/`，需输入 `AUTH_PASSWORD` 登录。兼容的单请求 API 为 `/api/upload?pwd=...`；网页大文件上传使用标准 tus 端点 `/api/uploads/`。
 
 > 默认端口映射为 `18000:8080`，可在 `docker-compose.yml` 中修改。数据持久化在 `./data` 目录。
 
@@ -64,6 +64,7 @@
 | `LISTEN_ADDR` | `:8080` | 服务监听地址。 |
 | `DATA_DIR` | `/data` | 数据目录，存放文件与元数据索引，需放在持久化存储上。 |
 | `PUBLIC_BASE_URL` | - | 客户端访问返回 URL 时使用的公网地址（局域网 IP 或 HTTPS 域名），末尾不带斜杠。本地存储模式下必填，否则 URL 不可达。 |
+| `AUTH_PASSWORD` | - | 必填。访问网页和外部上传 API 使用的短密码，长度为 6-16 个可打印 ASCII 字符。不要设置为常见密码。 |
 | `MAX_UPLOAD_BYTES` | `10GiB` | 单文件上传上限，不得超过 10 GiB。支持原始字节数，以及 `MiB`、`MB`、`GiB`、`GB`、`m`、`g` 等单位。 |
 | `MAX_STORAGE_BYTES` | `10GiB` | 所有未过期文件的总大小上限，不得超过 10 GiB。达到上限后新文件返回 `507`。 |
 | `RETENTION` | `1d` | 文件保留时长。仅支持正整数加小写单位：`m`（分钟）、`h`（小时）、`d`（天）、`w`（周），如 `5h`、`1d`、`1w`。 |
@@ -74,6 +75,8 @@
 | `OSS_ACCESS_KEY_ID` | - | OSS AccessKey ID。 |
 | `OSS_ACCESS_KEY_SECRET` | - | OSS AccessKey Secret。 |
 | `OSS_PUBLIC_BASE_URL` | - | Bucket 的公开访问域名（末尾不带斜杠），节点需要通过它在过期前稳定访问文件。 |
+
+服务每次启动都会生成新的内存签名密钥，因此浏览器登录状态和本地存储的文件分享链接都会失效；重启后重新登录或重新上传即可获得新链接。
 
 > ⚠️ `.env` 包含敏感信息，切勿提交到版本库（已在 `.gitignore` 中忽略）。
 
@@ -108,22 +111,22 @@ ALLOWED_TYPES=all
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| `POST` | `/api/upload` | 上传文件，表单字段名为 `file`，返回 `{"url","created"}`。 |
-| `POST/PATCH/HEAD/DELETE` | `/api/uploads/` | 标准 tus 可恢复上传端点，供网页和 tus 客户端使用。 |
-| `GET` | `/files/{sha256}` | 读取本地存储的文件（仅 `local` 模式可用）。 |
+| `POST` | `/api/upload?pwd={AUTH_PASSWORD}` | 上传文件，表单字段名为 `file`，返回 `{"url","created"}`。 |
+| `POST/PATCH/HEAD/DELETE` | `/api/uploads/` | 标准 tus 可恢复上传端点，仅限已登录网页会话。 |
+| `GET` | `/files/{sha256}?key={file-key}` | 读取本地存储的文件；上传响应会返回完整链接。 |
 | `GET` | `/healthz` | 健康检查，返回 `204 No Content`，可用作容器探针。 |
 
 ### 上传示例
 
 ```bash
-curl -F "file=@picture.png" http://localhost:18000/api/upload
+curl -F "file=@picture.png" "http://localhost:18000/api/upload?pwd=short1"
 ```
 
 成功响应：
 
 ```json
 {
-  "url": "http://localhost:18000/files/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+  "url": "http://localhost:18000/files/9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08?key=<file-specific-signature>",
   "created": "2026-07-16T00:00:00Z"
 }
 ```
@@ -132,6 +135,8 @@ curl -F "file=@picture.png" http://localhost:18000/api/upload
 - 文件过大返回 `413 Request Entity Too Large`。
 - 容量已满返回 `507 Insufficient Storage`。
 - 内容类型不在 `ALLOWED_TYPES` 白名单时返回 `400 Bad Request`。
+- 未携带正确 `pwd` 时返回 `401 Unauthorized`；同一客户端连续错误尝试过多时返回 `429 Too Many Requests`。
+- 返回的本地文件链接是仅对该文件有效的 bearer 链接；它不具备上传或访问其他文件的权限。请像密码一样妥善保存。
 
 ## 过期与存储机制
 
@@ -146,6 +151,7 @@ curl -F "file=@picture.png" http://localhost:18000/api/upload
 设置 `STORAGE_DRIVER=oss` 并填齐所有 `OSS_*` 配置即可启用：
 
 - Bucket 必须可通过 `OSS_PUBLIC_BASE_URL` 被公开读取，节点需要一个在过期前始终有效的稳定 URL。
+- OSS 的文件 URL 由 Bucket 直接公开提供，无法由本服务校验本地分享链接的 `key`；下载鉴权仅适用于 `local` 存储。
 - 对象统一存放在 Bucket 内的 `image-host/` 前缀下。
 - 文件的删除与去重仍由本服务管理，服务通过索引追踪每个对象，过期时自动删除。
 
@@ -181,6 +187,7 @@ docker run -d --name easy-temp-host \
   -p 18000:8080 \
   -v "$PWD/data:/data" \
   -e PUBLIC_BASE_URL=http://你的服务器地址:18000 \
+  -e AUTH_PASSWORD=short1 \
   easy-temp-host
 ```
 

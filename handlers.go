@@ -135,6 +135,10 @@ func (s *service) file(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "not found")
 		return
 	}
+	if !s.auth.validFileKey(id, r.URL.Query().Get("key")) {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
 	s.mu.RLock()
 	item, ok := s.records[id]
 	s.mu.RUnlock()
@@ -149,7 +153,7 @@ func (s *service) file(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", item.ContentType)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Header().Set("Cache-Control", "private, no-store")
 	http.ServeFile(w, r, path)
 }
 
@@ -208,5 +212,3 @@ func detectContentType(path string) (string, error) {
 	}
 	return normalizeContentType(http.DetectContentType(probe[:read])), nil
 }
-
-

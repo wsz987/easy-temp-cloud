@@ -29,6 +29,7 @@ type config struct {
 	OSSAccessKeyID  string
 	OSSAccessKey    string
 	OSSPublicURL    string
+	AuthPassword    string
 }
 
 // loadConfig reads and validates the environment configuration. It is the
@@ -49,6 +50,7 @@ func loadConfig() (config, error) {
 		OSSAccessKeyID:  os.Getenv("OSS_ACCESS_KEY_ID"),
 		OSSAccessKey:    os.Getenv("OSS_ACCESS_KEY_SECRET"),
 		OSSPublicURL:    strings.TrimRight(os.Getenv("OSS_PUBLIC_BASE_URL"), "/"),
+		AuthPassword:    os.Getenv("AUTH_PASSWORD"),
 	}
 	if raw := os.Getenv("MAX_UPLOAD_BYTES"); raw != "" {
 		value, err := parseBytes(raw)
@@ -79,7 +81,22 @@ func loadConfig() (config, error) {
 			return config{}, errors.New("OSS_ENDPOINT, OSS_BUCKET, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, and OSS_PUBLIC_BASE_URL are required for oss storage")
 		}
 	}
+	if !validAuthPassword(cfg.AuthPassword) {
+		return config{}, errors.New("AUTH_PASSWORD must be 6 to 16 ASCII characters")
+	}
 	return cfg, nil
+}
+
+func validAuthPassword(password string) bool {
+	if len(password) < 6 || len(password) > 16 {
+		return false
+	}
+	for _, char := range password {
+		if char < 0x21 || char > 0x7e {
+			return false
+		}
+	}
+	return true
 }
 
 func parseRetention(raw string) (time.Duration, error) {

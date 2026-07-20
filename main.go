@@ -53,11 +53,13 @@ func main() {
 
 func newRouter(svc *service) *http.ServeMux {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", svc.index)
-	mux.HandleFunc("GET /api/config", svc.clientConfig)
-	mux.HandleFunc("POST /api/upload", svc.upload)
-	mux.HandleFunc("GET /api/uploads/{id}/result", svc.tusResult)
-	mux.Handle("/api/uploads/", http.StripPrefix("/api/uploads/", svc.tus))
+	mux.HandleFunc("GET /{$}", svc.home)
+	mux.HandleFunc("POST /login", svc.login)
+	mux.HandleFunc("POST /logout", svc.logout)
+	mux.Handle("GET /api/config", svc.requireSession(http.HandlerFunc(svc.clientConfig)))
+	mux.Handle("POST /api/upload", svc.requirePasswordQuery(http.HandlerFunc(svc.upload)))
+	mux.Handle("GET /api/uploads/{id}/result", svc.requireSession(http.HandlerFunc(svc.tusResult)))
+	mux.Handle("/api/uploads/", svc.requireSession(http.StripPrefix("/api/uploads/", svc.tus)))
 	mux.HandleFunc("GET /files/{id}", svc.file)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	// Static vendored assets (Uppy bundle, icons) served under /assets/.

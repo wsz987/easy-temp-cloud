@@ -26,6 +26,7 @@ func newTestService(t *testing.T, maxUpload, maxStorage int64, allowedTypes stri
 		Retention:       24 * time.Hour,
 		Driver:          "local",
 		AllowedTypes:    allowedTypes,
+		AuthPassword:    "short1",
 	}
 	svc, err := newService(cfg)
 	if err != nil {
@@ -34,7 +35,15 @@ func newTestService(t *testing.T, maxUpload, maxStorage int64, allowedTypes stri
 	return svc
 }
 
-func testRouter(svc *service) *http.ServeMux { return newRouter(svc) }
+func testRouter(svc *service) http.Handler {
+	router := newRouter(svc)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := r.Cookie(authCookieName); err != nil {
+			r.AddCookie(svc.auth.newSessionCookie(time.Now()))
+		}
+		router.ServeHTTP(w, r)
+	})
+}
 
 func tusCreate(t *testing.T, router http.Handler, size int64) string {
 	t.Helper()

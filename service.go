@@ -30,6 +30,7 @@ type service struct {
 	config        config
 	store         blobStore
 	policy        typePolicy
+	auth          *auth
 	tus           http.Handler
 	tusDir        string
 	mu            sync.RWMutex
@@ -49,7 +50,11 @@ func newService(cfg config) (*service, error) {
 	if err != nil {
 		return nil, err
 	}
-	service := &service{config: cfg, policy: policy, records: map[string]record{}, tusResults: map[string]record{}, orphans: map[string]int64{}}
+	auth, err := newAuth(cfg.AuthPassword)
+	if err != nil {
+		return nil, err
+	}
+	service := &service{config: cfg, policy: policy, auth: auth, records: map[string]record{}, tusResults: map[string]record{}, orphans: map[string]int64{}}
 	if cfg.Driver == "oss" {
 		client, err := oss.New(cfg.OSSEndpoint, cfg.OSSAccessKeyID, cfg.OSSAccessKey)
 		if err != nil {
@@ -125,5 +130,5 @@ func (s *service) urlFor(r *http.Request, item record) string {
 		}
 		base = scheme + "://" + r.Host
 	}
-	return base + "/files/" + item.ID
+	return base + "/files/" + item.ID + "?key=" + s.auth.fileKey(item.ID)
 }

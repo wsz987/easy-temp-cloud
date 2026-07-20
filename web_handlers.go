@@ -7,8 +7,32 @@ import (
 	"time"
 )
 
-// clientConfig exposes the runtime limits the browser needs to validate files
-// before upload and to size chunks. Read-only and unauthenticated.
+// home serves the login form to anonymous visitors and the upload page to an
+// authenticated browser session.
+func (s *service) home(w http.ResponseWriter, r *http.Request) {
+	cookie, err := r.Cookie(authCookieName)
+	if err != nil || !s.auth.validSession(cookie.Value, time.Now()) {
+		s.loginPage(w, http.StatusOK)
+		return
+	}
+	s.index(w, r)
+}
+
+func (s *service) loginPage(w http.ResponseWriter, status int) {
+	data, err := fs.ReadFile(webSubtree(), "login.html")
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "login page unavailable")
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(status)
+	w.Write(data)
+}
+
+// clientConfig exposes the runtime limits an authenticated browser needs to
+// validate files before upload and to size chunks.
 func (s *service) clientConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"maxFileSize":  s.config.MaxUploadBytes,
