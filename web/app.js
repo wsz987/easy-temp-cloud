@@ -5,8 +5,12 @@
 // the single source of truth.
 
 import { Uppy, Dashboard, Tus, Webcam } from './vendor/uppy.min.mjs'
+import { detectMobilePlatform, isMobilePlatform, uploadNoteForPlatform } from './platform.mjs'
 
-const isMobile = isTouchDevice()
+const mobilePlatform = detectMobilePlatform()
+const isMobile = isMobilePlatform()
+const isIOS = mobilePlatform === 'ios'
+const isAndroid = mobilePlatform === 'android'
 const STORAGE_KEY = 'easy-temp-host:history'
 const MAX_HISTORY = 50
 
@@ -34,32 +38,37 @@ async function init() {
     },
     locale: zhLocale(),
   })
-    .use(Dashboard, {
-      inline: true,
-      target: '#uppy',
-      theme: 'light',
-      showProgressDetails: true,
-      showLinkToFileUploadResult: false,
-      proudlyDisplayPoweredByUppy: false,
-      height: isMobile ? 420 : 470,
-      width: '100%',
-      note: '支持拖拽、点击选择或拍照/录像上传',
-    })
-    .use(Webcam, {
+
+  uppy.use(Dashboard, {
+    inline: true,
+    target: '#uppy',
+    theme: 'light',
+    showProgressDetails: true,
+    showLinkToFileUploadResult: false,
+    proudlyDisplayPoweredByUppy: false,
+    height: isMobile ? 420 : 470,
+    width: '100%',
+    note: uploadNoteForPlatform(mobilePlatform),
+  })
+
+  if (isMobile) {
+    uppy.use(Webcam, {
       target: Dashboard,
       modes: ['picture', 'video-audio'],
-      mobileNativeCamera: isMobile,
+      mobileNativeCamera: isIOS || isAndroid || isMobile,
       showRecordingLength: true,
       mirror: true,
     })
-    .use(Tus, {
-      endpoint: '/api/uploads/',
-      chunkSize: config.chunkSize || 8 * 1024 * 1024,
-      limit: isMobile ? 2 : 3,
-      retryDelays: [0, 1000, 3000, 8000],
-      storeFingerprintForResuming: true,
-      removeFingerprintOnSuccess: true,
-    })
+  }
+
+  uppy.use(Tus, {
+    endpoint: '/api/uploads/',
+    chunkSize: config.chunkSize || 8 * 1024 * 1024,
+    limit: isMobile ? 2 : 3,
+    retryDelays: [0, 1000, 3000, 8000],
+    storeFingerprintForResuming: true,
+    removeFingerprintOnSuccess: true,
+  })
 
   uppy.on('complete', async (result) => {
     const ok = result.successful || []
@@ -219,11 +228,6 @@ function allowedFileTypes(raw) {
     out.add(t)
   }
   return out.size ? [...out] : null
-}
-
-function isTouchDevice() {
-  return ('ontouchstart' in window) || navigator.maxTouchPoints > 0 ||
-    (navigator.userAgent && /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent))
 }
 
 function escapeHtml(value) {
