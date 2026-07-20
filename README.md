@@ -1,12 +1,6 @@
 # easy-temp-host
 
-一个用 Go 编写的轻量临时文件托管服务，原名 image-host（仅图传），现已解限为可托管任意类型上传内容。它接收包含 `file` 字段的 `multipart/form-data` 请求，返回如下 JSON：
-
-```json
-{"url":"http://localhost:18000/files/<sha256>","created":"2026-07-16T00:00:00Z"}
-```
-
-通过 `ALLOWED_TYPES` 环境变量控制接受哪些内容类型：默认不限制，可设为 `images` 仅接受 JPEG/PNG/GIF/WebP，也可自定义精确的 MIME 列表（详见[环境变量说明](#环境变量说明)）。
+临时文件托管服务，支持网页和客户端上传。
 
 ## 快速部署（Docker，推荐）
 
@@ -39,7 +33,17 @@
    docker compose logs -f
    ```
 
-5. 网页上传入口为 `http://你的服务器地址:18000/`，需输入 `AUTH_PASSWORD` 登录。兼容的单请求 API 为 `/api/upload?pwd=...`；网页大文件上传使用标准 tus 端点 `/api/uploads/`。
+5. 网页上传入口为 `http://你的服务器地址:18000/`，需输入 `AUTH_PASSWORD` 登录。客户端上传地址如下，`pwd` 替换为你设置的 `AUTH_PASSWORD`：
+
+   ```text
+   # 客户端与服务不在同一台机器
+   http://你的服务器地址:18000/api/upload?pwd=你的AUTH_PASSWORD
+
+   # 客户端与服务在同一台机器
+   http://localhost:18000/api/upload?pwd=你的AUTH_PASSWORD
+   ```
+
+   网页大文件上传使用标准 tus 端点 `/api/uploads/`。
 
 > 默认端口映射为 `18000:8080`，可在 `docker-compose.yml` 中修改。数据持久化在 `./data` 目录。
 
