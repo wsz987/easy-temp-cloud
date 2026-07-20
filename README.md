@@ -39,7 +39,7 @@
    docker compose logs -f
    ```
 
-5. 将客户端的上传地址设置为 `http://你的服务器地址:18000/api/upload`。若客户端与本服务在同一台机器上，则为 `http://localhost:18000/api/upload`。
+5. 网页上传入口为 `http://你的服务器地址:18000/`。兼容的单请求 API 为 `/api/upload`；网页大文件上传使用标准 tus 端点 `/api/uploads/`。
 
 > 默认端口映射为 `18000:8080`，可在 `docker-compose.yml` 中修改。数据持久化在 `./data` 目录。
 
@@ -51,6 +51,7 @@
 - **可配置类型校验**：通过 `ALLOWED_TYPES` 选择接受哪些内容类型。默认完全开放，可设为 `images` 仅接受 JPEG/PNG/GIF/WebP，也可自由组合预设别名（`images`/`videos`/`audio`/`docs`）、前缀通配（`image/*`、`video/*`）和精确 MIME。类型检测基于文件头 magic bytes（标准库 `http.DetectContentType`），不依赖文件名后缀。
 - **自动过期**：默认保留 24 小时，服务启动时及每小时自动清理过期文件。
 - **崩溃恢复**：启动时自动删除中断的临时上传，以及不在索引中的孤立存储对象，保证数据一致性。
+- **可恢复大文件上传**：网页使用 Uppy Tus，服务端由 tusd 处理分片、进度、暂停、取消与刷新后的续传；上传元数据位于 `data/tus`。
 - **双存储后端**：支持本地磁盘与阿里云 OSS；OSS 模式下文件的删除与去重仍由本服务管理。
 - **元数据持久化**：文件索引保存在 `./data` 目录，重启后不丢失。
 
@@ -65,7 +66,7 @@
 | `PUBLIC_BASE_URL` | - | 客户端访问返回 URL 时使用的公网地址（局域网 IP 或 HTTPS 域名），末尾不带斜杠。本地存储模式下必填，否则 URL 不可达。 |
 | `MAX_UPLOAD_BYTES` | `10GiB` | 单文件上传上限，不得超过 10 GiB。支持原始字节数，以及 `MiB`、`MB`、`GiB`、`GB`、`m`、`g` 等单位。 |
 | `MAX_STORAGE_BYTES` | `10GiB` | 所有未过期文件的总大小上限，不得超过 10 GiB。达到上限后新文件返回 `507`。 |
-| `RETENTION_HOURS` | `24` | 文件保留时长（小时），超过后自动删除。 |
+| `RETENTION` | `1d` | 文件保留时长。仅支持正整数加小写单位：`m`（分钟）、`h`（小时）、`d`（天）、`w`（周），如 `5h`、`1d`、`1w`。 |
 | `ALLOWED_TYPES` | `all` | 接受的上传内容类型。见下方详细说明。 |
 | `STORAGE_DRIVER` | `local` | 存储驱动，可选 `local`（本地磁盘）或 `oss`（阿里云 OSS）。选 `oss` 前须填齐下方所有 `OSS_*` 配置。 |
 | `OSS_ENDPOINT` | - | 阿里云 OSS Endpoint，例如 `https://oss-cn-hangzhou.aliyuncs.com`。 |
@@ -108,6 +109,7 @@ ALLOWED_TYPES=all
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
 | `POST` | `/api/upload` | 上传文件，表单字段名为 `file`，返回 `{"url","created"}`。 |
+| `POST/PATCH/HEAD/DELETE` | `/api/uploads/` | 标准 tus 可恢复上传端点，供网页和 tus 客户端使用。 |
 | `GET` | `/files/{sha256}` | 读取本地存储的文件（仅 `local` 模式可用）。 |
 | `GET` | `/healthz` | 健康检查，返回 `204 No Content`，可用作容器探针。 |
 
@@ -133,9 +135,10 @@ curl -F "file=@picture.png" http://localhost:18000/api/upload
 
 ## 过期与存储机制
 
-- 服务在启动时及每小时执行清理：删除创建时间超过 `RETENTION_HOURS` 的文件。
+- 服务在启动时及每小时执行清理：删除创建时间超过 `RETENTION` 的文件。
 - 启动时还会移除上传中断遗留的临时文件，以及存在于存储中但不在索引里的孤立对象。
 - 上传采用「先预留容量再写入」的策略，确保并发上传不会超出总容量上限。
+- 未完成的 tus 上传在 2 小时无写入后自动清理并归还容量预留；服务重启后可继续未过期的上传。
 - 文件内容与持久化元数据索引均保存在 `./data` 目录，请务必将其放在持久化卷上。
 
 ## 阿里云 OSS 模式
@@ -156,6 +159,17 @@ curl -F "file=@picture.png" http://localhost:18000/api/upload
 go build -o easy-temp-host .
 ./easy-temp-host
 ```
+
+### 本地开发（自动重启）
+
+开发时推荐使用 [Air](https://github.com/air-verse/air) 监听 Go 和网页资源文件。保存 `.go`、`web/*.html`、`web/*.css`、`web/*.js` 或 `web/*.mjs` 后，Air 会重建并重启服务；因为网页资源通过 `go:embed` 编入二进制，Air 的代理会在新进程启动后自动刷新浏览器页面。
+
+```powershell
+go install github.com/air-verse/air@latest
+air
+```
+
+Air 使用仓库根目录的 `.air.toml`，应用监听 `http://localhost:8080`，浏览器应通过支持自动刷新的代理入口 `http://localhost:8081` 访问。开发二进制写入并在退出时清理 `tmp/`。Docker Compose 仍用于生产部署，不受该配置影响。
 
 ### Docker 单独运行
 

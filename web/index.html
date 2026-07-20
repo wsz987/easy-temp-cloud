@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f8f7fb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="description" content="easy-temp-host 临时文件托管 - 上传页面">
+  <title>easy-temp-host · 上传</title>
+  <link rel="stylesheet" href="/assets/vendor/uppy.min.css">
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div class="badge" id="service-state" aria-live="polite">
+        <span class="badge-dot"></span>
+        <span>服务正常</span>
+      </div>
+      <h1>轻松共享，<span>临时托管</span></h1>
+      <p>拖拽文件到下方上传区，即可获得可分享的下载链接。文件在保留期后自动清理。</p>
+    </header>
+
+    <main>
+      <section class="card upload-card" aria-labelledby="upload-title">
+        <div class="card-head">
+          <div class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span id="upload-title">上传文件</span>
+          </div>
+          <span class="state-chip" id="batch-state">等待文件</span>
+        </div>
+
+        <div class="meta-bar" id="meta-bar">
+          <span class="pill" id="pill-maxsize">单文件 <strong>—</strong></span>
+          <span class="pill" id="pill-chunk">分片 <strong>—</strong></span>
+          <span class="pill" id="pill-retention">保留 <strong>—</strong></span>
+          <span class="pill pill-types" id="pill-types">类型 <strong>—</strong></span>
+        </div>
+
+        <div id="uppy"></div>
+      </section>
+
+      <section id="links" class="card results-shell" hidden aria-labelledby="links-title">
+        <div class="results-head">
+          <div class="results-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+            <span id="links-title">分享链接</span>
+          </div>
+          <button type="button" class="clear-history" id="clear-history">清空历史</button>
+        </div>
+        <ul id="link-list"></ul>
+      </section>
+    </main>
+  </div>
+
+  <script type="module" src="/assets/app.js"></script>
+  <noscript>
+    <p style="color:#1f1a2e;text-align:center;padding:24px">本页需要 JavaScript 才能上传文件，请启用浏览器脚本后刷新。</p>
+  </noscript>
+</body>
+</html>

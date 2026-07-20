@@ -16,6 +16,19 @@ import (
 
 var tinyPNG = []byte{137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 0, 1, 0, 0, 0, 1, 8, 6, 0, 0, 0, 31, 21, 196, 137}
 
+func TestStaticModuleIsServedAsJavaScript(t *testing.T) {
+	service, err := newService(config{DataDir: t.TempDir(), MaxUploadBytes: 1024, MaxStorageBytes: 1024, Retention: 24 * time.Hour, Driver: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/assets/vendor/uppy.min.mjs", nil)
+	response := httptest.NewRecorder()
+	newRouter(service).ServeHTTP(response, request)
+	if got := response.Header().Get("Content-Type"); got != "text/javascript; charset=utf-8" {
+		t.Fatalf("module content type = %q, want JavaScript", got)
+	}
+}
+
 func TestUploadDeduplicatesAndServesImage(t *testing.T) {
 	directory := t.TempDir()
 	service, err := newService(config{DataDir: directory, PublicBaseURL: "http://images.test", MaxUploadBytes: 1024, MaxStorageBytes: 1024, Retention: 24 * time.Hour, Driver: "local"})

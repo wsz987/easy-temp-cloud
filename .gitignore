@@ -13,6 +13,7 @@ image-host.exe
 
 # ===== 数据与运行时 =====
 /data/
+/tmp/
 *.log
 *.db
 *.sqlite
@@ -33,3 +34,4 @@ Thumbs.db
 
 # ===== Reasonix =====
 .reasonix/
+docs/
