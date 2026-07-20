@@ -1,29 +1,119 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>登录 - easy-temp-cloud</title>
-  <style>
-    :root { color-scheme: light; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, "Microsoft YaHei", sans-serif; }
-    * { box-sizing: border-box; }
-    body { min-height: 100vh; margin: 0; display: grid; place-items: center; padding: 24px; background: #eef2f0; color: #17221c; }
-    main { width: min(100%, 360px); padding: 30px; border: 1px solid #cbd7cf; border-radius: 8px; background: #fff; box-shadow: 0 16px 36px rgba(23, 34, 28, .12); }
-    h1 { margin: 0 0 24px; font-size: 22px; font-weight: 700; }
-    label { display: grid; gap: 8px; font-size: 14px; font-weight: 600; }
-    input { width: 100%; min-height: 42px; padding: 9px 11px; border: 1px solid #9baea2; border-radius: 5px; font: inherit; }
-    input:focus { border-color: #24734c; outline: 3px solid #cce8d8; }
-    button { width: 100%; min-height: 42px; margin-top: 20px; border: 0; border-radius: 5px; background: #24734c; color: #fff; cursor: pointer; font: inherit; font-weight: 700; }
-    button:hover { background: #195d3b; }
-  </style>
-</head>
-<body>
-  <main>
-    <h1>easy-temp-cloud</h1>
-    <form action="/login" method="post">
-      <label>访问密码 <input type="password" name="password" autocomplete="current-password" required autofocus></label>
-      <button type="submit">进入</button>
-    </form>
-  </main>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#f8f7fb" />
+    <title>登录 - easy-temp-cloud</title>
+    <link rel="stylesheet" href="/assets/styles.css" />
+  </head>
+  <body class="login-page">
+    <div class="page login-shell">
+      <header class="hero login-hero">
+        <h1>安全访问，<span>临时托管</span></h1>
+        <p>输入访问密码后继续使用 easy-temp-cloud。</p>
+      </header>
+
+      <main class="login-main">
+        <section class="card login-card" aria-labelledby="login-title">
+          <div class="card-head">
+            <div class="card-title">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <rect x="3" y="11" width="18" height="10" rx="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+              <span id="login-title">访问验证</span>
+            </div>
+            <span class="state-chip">需要密码</span>
+          </div>
+
+          <form class="login-form" action="/login" method="post">
+            <label for="password">访问密码</label>
+            <div class="password-field">
+              <input
+                id="password"
+                type="password"
+                name="password"
+                autocomplete="current-password"
+                required
+                autofocus
+              />
+              <button
+                id="toggle-password"
+                class="password-toggle"
+                type="button"
+                aria-label="显示密码"
+                aria-pressed="false"
+                title="显示密码"
+              >
+                <svg
+                  class="icon-show"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z" />
+                  <circle cx="12" cy="12" r="3" />
+                </svg>
+                <svg
+                  class="icon-hide"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  aria-hidden="true"
+                  hidden
+                >
+                  <path d="m3 3 18 18" />
+                  <path d="M10.6 10.6a2 2 0 0 0 2.8 2.8" />
+                  <path
+                    d="M9.9 4.2A10.9 10.9 0 0 1 12 4c6.5 0 10 8 10 8a18.5 18.5 0 0 1-3 4.4"
+                  />
+                  <path
+                    d="M6.6 6.6C3.7 8.5 2 12 2 12s3.5 8 10 8a9.9 9.9 0 0 0 3.4-.6"
+                  />
+                </svg>
+              </button>
+            </div>
+            <button class="login-submit" type="submit">进入上传页面</button>
+          </form>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const password = document.getElementById("password");
+      const toggle = document.getElementById("toggle-password");
+      const showIcon = toggle.querySelector(".icon-show");
+      const hideIcon = toggle.querySelector(".icon-hide");
+
+      toggle.addEventListener("click", () => {
+        const isVisible = password.type === "password";
+        password.type = isVisible ? "text" : "password";
+        toggle.setAttribute("aria-pressed", String(isVisible));
+        toggle.setAttribute("aria-label", isVisible ? "隐藏密码" : "显示密码");
+        toggle.title = isVisible ? "隐藏密码" : "显示密码";
+        showIcon.hidden = isVisible;
+        hideIcon.hidden = !isVisible;
+        password.focus();
+      });
+    </script>
+  </body>
 </html>

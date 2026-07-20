@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"io/fs"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -47,6 +48,26 @@ func TestUnauthenticatedRootServesLoginForm(t *testing.T) {
 	}
 	if !strings.Contains(response.Body.String(), `name="password"`) {
 		t.Fatal("root response does not contain a password form")
+	}
+}
+
+func TestLoginPageIncludesPasswordVisibilityToggle(t *testing.T) {
+	response := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	newRouter(newAuthTestService(t)).ServeHTTP(response, request)
+
+	if !strings.Contains(response.Body.String(), `id="toggle-password"`) {
+		t.Fatal("login page does not contain a password visibility toggle")
+	}
+}
+
+func TestLoginStylesHideInactivePasswordIcon(t *testing.T) {
+	styles, err := fs.ReadFile(webSubtree(), "styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(styles), ".password-toggle [hidden] { display: none !important; }") {
+		t.Fatal("login styles do not hide the inactive password icon")
 	}
 }
 

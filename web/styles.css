@@ -44,6 +44,102 @@ body {
   background-attachment: fixed;
 }
 
+.login-page {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+}
+
+.login-shell {
+  width: min(440px, calc(100% - 32px));
+  padding: 40px 0;
+}
+
+.login-hero { margin-bottom: 24px; }
+
+.login-hero h1 { font-size: clamp(28px, 8vw, 36px); }
+
+.login-hero p { max-width: 360px; }
+
+.login-main { width: 100%; }
+
+.login-card { overflow: visible; }
+
+.login-form {
+  display: grid;
+  gap: 10px;
+  padding: 24px;
+}
+
+.login-form label {
+  color: var(--muted-strong);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.password-field { position: relative; }
+
+.password-field input {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 48px 10px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  background: var(--surface-solid);
+  color: var(--text);
+  font: inherit;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.password-field input:focus {
+  border-color: var(--accent-light);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+}
+
+.password-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: background 0.2s, color 0.2s;
+}
+
+.password-toggle:hover { background: var(--accent-bg); color: var(--accent); }
+
+.password-toggle:focus-visible { outline: 3px solid rgba(124, 58, 237, 0.24); }
+
+.password-toggle svg { width: 19px; height: 19px; }
+
+.password-toggle [hidden] { display: none !important; }
+
+.login-submit {
+  min-height: 44px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  box-shadow: 0 4px 14px rgba(124, 58, 237, 0.30);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
+}
+
+.login-submit:hover { background: #6d28d9; box-shadow: 0 6px 20px rgba(124, 58, 237, 0.38); }
+
+.login-submit:active { transform: scale(0.98); }
+
 .page {
   width: min(840px, calc(100% - 32px));
   margin: 0 auto;
@@ -506,4 +602,6 @@ body {
   .link-row { flex-wrap: wrap; }
   .link-row input[type="text"] { width: 100%; flex: auto; }
   .link-meta { width: 100%; order: -1; justify-content: flex-end; }
+  .login-shell { width: min(100% - 22px, 440px); padding: 26px 0; }
+  .login-form { padding: 18px; }
 }
