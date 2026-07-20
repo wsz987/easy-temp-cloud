@@ -403,9 +403,18 @@ function zhLocale() {
       pluginNameCamera: '从相机导入',
       noCameraTitle: '未检测到摄像头',
       noCameraDescription: '请连接摄像头设备后再拍照或录制视频',
+      recordingStoppedMaxSize: '录制已停止，文件大小即将超过限制',
+      submitRecordedFile: '使用这个文件',
+      discardRecordedFile: '重新拍摄',
+      smile: '请看镜头',
       takePicture: '拍照',
+      startRecording: '开始录像',
+      stopRecording: '停止录像',
       recordVideo: '录像',
       recordAudio: '录音',
+      recordingLength: '录制时长 %{recording_length}',
+      allowAccessTitle: '请允许访问相机',
+      allowAccessDescription: '拍照或录制视频前，请允许此站点访问你的相机。',
     },
   }
 }
