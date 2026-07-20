@@ -1,4 +1,4 @@
-module easy-temp-host
+module easy-temp-cloud
 
 go 1.23.0
 

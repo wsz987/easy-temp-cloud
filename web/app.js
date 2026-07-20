@@ -11,7 +11,7 @@ const mobilePlatform = detectMobilePlatform()
 const isMobile = isMobilePlatform()
 const isIOS = mobilePlatform === 'ios'
 const isAndroid = mobilePlatform === 'android'
-const STORAGE_KEY = 'easy-temp-host:history'
+const STORAGE_KEY = 'easy-temp-cloud:history'
 const MAX_HISTORY = 50
 
 init().catch((err) => {

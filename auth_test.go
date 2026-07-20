@@ -70,7 +70,7 @@ func TestLoginCreatesSessionForProtectedRoutes(t *testing.T) {
 		t.Fatalf("login status = %d, want %d", loginResponse.Code, http.StatusSeeOther)
 	}
 	cookies := loginResponse.Result().Cookies()
-	if len(cookies) != 1 || cookies[0].Name != authCookieName || !cookies[0].HttpOnly {
+	if len(cookies) != 1 || cookies[0].Name != "et_session" || !cookies[0].HttpOnly {
 		t.Fatalf("login cookie = %#v", cookies)
 	}
 	config := httptest.NewRequest(http.MethodGet, "/api/config", nil)

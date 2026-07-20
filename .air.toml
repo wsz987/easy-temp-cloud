@@ -2,8 +2,8 @@ root = "."
 tmp_dir = "tmp"
 
 [build]
-  cmd = "go build -o ./tmp/easy-temp-host.exe ."
-  bin = "tmp/easy-temp-host.exe"
+  cmd = "go build -o ./tmp/easy-temp-cloud.exe ."
+  bin = "tmp/easy-temp-cloud.exe"
   include_ext = ["go", "html", "css", "js", "mjs"]
   exclude_dir = ["data", "tmp", "web/vendor"]
   exclude_regex = ["_test.go"]

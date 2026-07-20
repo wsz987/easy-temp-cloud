@@ -47,7 +47,7 @@ func main() {
 		// but a slow single-shot upload of up to 10 GiB still needs hours.
 		ReadTimeout: 2 * time.Hour,
 	}
-	log.Printf("easy-temp-host listening on %s with %s storage (allowed types: %s)", cfg.ListenAddr, cfg.Driver, svc.policy)
+	log.Printf("easy-temp-cloud listening on %s with %s storage (allowed types: %s)", cfg.ListenAddr, cfg.Driver, svc.policy)
 	log.Fatal(server.ListenAndServe())
 }
 

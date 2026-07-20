@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	authCookieName    = "easy_temp_host_session"
+	authCookieName    = "et_session"
 	authSessionTTL    = 7 * 24 * time.Hour
 	maxAuthFailures   = 5
 	authFailureWindow = 5 * time.Minute

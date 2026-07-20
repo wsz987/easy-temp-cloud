@@ -1,13 +1,15 @@
+name: easy-temp-cloud
+
 services:
-  easy-temp-host:
+  easy-temp-cloud:
     build: .
     restart: unless-stopped
     ports:
-      - "18000:8080"
+      - "8080:8080"
     environment:
       LISTEN_ADDR: ":8080"
       DATA_DIR: "/data"
-      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:18000}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:8080}"
       AUTH_PASSWORD: "${AUTH_PASSWORD:?AUTH_PASSWORD is required}"
       MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-10GiB}"
       MAX_STORAGE_BYTES: "${MAX_STORAGE_BYTES:-10GiB}"
