@@ -1,0 +1,35 @@
+# ===== 环境与密钥 =====
+.env
+.env.*
+!.env.example
+
+# ===== 构建产物 =====
+# 可执行文件
+image-host
+image-host.exe
+*.exe
+*.test
+*.out
+
+# ===== 数据与运行时 =====
+/data/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# ===== Go 工具链 =====
+# 依赖目录(本项目使用 go mod,不提交 vendor)
+/vendor/
+
+# ===== IDE / 编辑器 =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ===== Reasonix =====
+.reasonix/

@@ -1,0 +1,22 @@
+services:
+  easy-temp-host:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "18000:8080"
+    environment:
+      LISTEN_ADDR: ":8080"
+      DATA_DIR: "/data"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:18000}"
+      MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-10GiB}"
+      MAX_STORAGE_BYTES: "${MAX_STORAGE_BYTES:-10GiB}"
+      RETENTION_HOURS: "${RETENTION_HOURS:-24}"
+      ALLOWED_TYPES: "${ALLOWED_TYPES:-all}"
+      STORAGE_DRIVER: "${STORAGE_DRIVER:-local}"
+      OSS_ENDPOINT: "${OSS_ENDPOINT:-}"
+      OSS_BUCKET: "${OSS_BUCKET:-}"
+      OSS_ACCESS_KEY_ID: "${OSS_ACCESS_KEY_ID:-}"
+      OSS_ACCESS_KEY_SECRET: "${OSS_ACCESS_KEY_SECRET:-}"
+      OSS_PUBLIC_BASE_URL: "${OSS_PUBLIC_BASE_URL:-}"
+    volumes:
+      - ./data:/data
