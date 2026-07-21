@@ -341,7 +341,6 @@ body {
 #uppy .uppy-Dashboard,
 #uppy .uppy-Dashboard-inner,
 #uppy .uppy-DashboardContent-bar,
-#uppy .uppy-Dashboard-AddFiles,
 #uppy .uppy-DashboardContent-back,
 #uppy .uppy-StatusBar,
 #uppy .uppy-FileCard,
@@ -358,17 +357,46 @@ body {
 }
 
 #uppy .uppy-Dashboard-AddFiles {
+  position: relative !important;
   border: 2px dashed var(--line-strong) !important;
   border-radius: var(--radius-lg) !important;
-  margin: 24px !important;
-  background: rgba(248, 250, 252, 0.6) !important;
+  margin: 20px 24px 24px !important;
+  padding: 36px 20px !important;
+  background: var(--surface-raised) !important;
   transition: all 0.25s ease !important;
 }
 
 #uppy .uppy-Dashboard-AddFiles:hover {
   border-color: var(--primary) !important;
-  background: rgba(99, 102, 241, 0.04) !important;
+  background: rgba(99, 102, 241, 0.05) !important;
   box-shadow: 0 0 0 4px var(--primary-bg) !important;
+  transform: translateY(-1px);
+}
+
+#uppy .uppy-Dashboard-AddFiles.is-drag-target,
+#uppy .uppy-Dashboard-AddFiles[drag-state="over"] {
+  border-color: var(--primary) !important;
+  background: rgba(99, 102, 241, 0.1) !important;
+  box-shadow: 0 0 0 6px var(--primary-bg), inset 0 0 40px rgba(99, 102, 241, 0.08) !important;
+}
+
+#uppy .uppy-Dashboard-dropFilesHereHint {
+  position: absolute !important;
+  inset: 12px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 2.5px dashed var(--primary) !important;
+  border-radius: var(--radius-lg) !important;
+  background: rgba(255, 255, 255, 0.94) !important;
+  backdrop-filter: blur(12px) !important;
+  -webkit-backdrop-filter: blur(12px) !important;
+  color: var(--primary) !important;
+  font-size: 18px !important;
+  font-weight: 750 !important;
+  z-index: 1000 !important;
+  box-shadow: 0 12px 36px rgba(99, 102, 241, 0.2) !important;
+  animation: popIn 0.2s ease both !important;
 }
 
 #uppy .uppy-Dashboard-AddFiles-title,
@@ -376,19 +404,29 @@ body {
 #uppy .uppy-Dashboard-Item-name,
 #uppy .uppy-StatusBar-content {
   color: var(--text-primary) !important;
-  font-weight: 600 !important;
+  font-weight: 650 !important;
 }
 
 #uppy .uppy-Dashboard-browse,
 #uppy .uppy-StatusBar-actionBtn {
   color: var(--primary) !important;
-  font-weight: 700 !important;
+  font-weight: 750 !important;
+  text-decoration: underline !important;
+  text-underline-offset: 3px !important;
 }
 
 #uppy .uppy-Dashboard-AddFiles-info,
 #uppy .uppy-Dashboard-Item-status,
 #uppy .uppy-StatusBar-statusSecondary {
   color: var(--text-muted) !important;
+}
+
+#uppy .uppy-Dashboard-AddFiles-icon {
+  fill: var(--primary) !important;
+  color: var(--primary) !important;
+  width: 48px !important;
+  height: 48px !important;
+  margin-bottom: 12px !important;
 }
 
 #uppy .uppy-c-btn-primary,
