@@ -60,8 +60,30 @@ func TestUploadDeduplicatesAndServesImage(t *testing.T) {
 	if response.Code != http.StatusOK || response.Header().Get("Content-Type") != "image/png" {
 		t.Fatalf("served response = %d (%s)", response.Code, response.Header().Get("Content-Type"))
 	}
+	if got := response.Header().Get("Content-Disposition"); got != "attachment" {
+		t.Fatalf("Content-Disposition = %q, want attachment", got)
+	}
 	if len(service.records) != 1 {
 		t.Fatalf("records = %d, want 1", len(service.records))
+	}
+}
+
+type signedURLStore struct{ url string }
+
+func (s signedURLStore) Put(context.Context, string, string, string) error { return nil }
+func (s signedURLStore) Delete(context.Context, string) error              { return nil }
+func (s signedURLStore) SignURL(string, time.Duration) (string, error)     { return s.url, nil }
+
+func TestOSSURLsUseStorageSignedURL(t *testing.T) {
+	service, err := newService(config{DataDir: t.TempDir(), MaxUploadBytes: 1024, MaxStorageBytes: 1024, Retention: time.Hour, Driver: "local"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.config.Driver = "oss"
+	service.store = signedURLStore{url: "https://private.example/signed"}
+
+	if got := service.urlFor(httptest.NewRequest(http.MethodGet, "/", nil), record{ObjectKey: "image-host/object"}); got != "https://private.example/signed" {
+		t.Fatalf("OSS URL = %q, want signed URL", got)
 	}
 }
 

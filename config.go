@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/joho/godotenv"
 	str2duration "github.com/xhit/go-str2duration/v2"
 )
 
@@ -28,7 +29,6 @@ type config struct {
 	OSSBucket       string
 	OSSAccessKeyID  string
 	OSSAccessKey    string
-	OSSPublicURL    string
 	AuthPassword    string
 }
 
@@ -36,6 +36,9 @@ type config struct {
 // single source of truth for startup-time validation; a returned error aborts
 // the process.
 func loadConfig() (config, error) {
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return config{}, fmt.Errorf("load .env: %w", err)
+	}
 	cfg := config{
 		ListenAddr:      env("LISTEN_ADDR", ":8080"),
 		DataDir:         env("DATA_DIR", "/data"),
@@ -49,7 +52,6 @@ func loadConfig() (config, error) {
 		OSSBucket:       os.Getenv("OSS_BUCKET"),
 		OSSAccessKeyID:  os.Getenv("OSS_ACCESS_KEY_ID"),
 		OSSAccessKey:    os.Getenv("OSS_ACCESS_KEY_SECRET"),
-		OSSPublicURL:    strings.TrimRight(os.Getenv("OSS_PUBLIC_BASE_URL"), "/"),
 		AuthPassword:    os.Getenv("AUTH_PASSWORD"),
 	}
 	if raw := os.Getenv("MAX_UPLOAD_BYTES"); raw != "" {
@@ -77,8 +79,8 @@ func loadConfig() (config, error) {
 		return config{}, fmt.Errorf("STORAGE_DRIVER must be local or oss")
 	}
 	if cfg.Driver == "oss" {
-		if cfg.OSSEndpoint == "" || cfg.OSSBucket == "" || cfg.OSSAccessKeyID == "" || cfg.OSSAccessKey == "" || cfg.OSSPublicURL == "" {
-			return config{}, errors.New("OSS_ENDPOINT, OSS_BUCKET, OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, and OSS_PUBLIC_BASE_URL are required for oss storage")
+		if cfg.OSSEndpoint == "" || cfg.OSSBucket == "" || cfg.OSSAccessKeyID == "" || cfg.OSSAccessKey == "" {
+			return config{}, errors.New("OSS_ENDPOINT, OSS_BUCKET, OSS_ACCESS_KEY_ID, and OSS_ACCESS_KEY_SECRET are required for oss storage")
 		}
 	}
 	if !validAuthPassword(cfg.AuthPassword) {

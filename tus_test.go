@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -194,6 +195,16 @@ func TestTusCleanupReleasesExpiredReservation(t *testing.T) {
 		t.Fatalf("reap tus: %v", err)
 	}
 	tusCreate(t, testRouter(svc), 5)
+}
+
+func TestTusResultCacheIsBounded(t *testing.T) {
+	svc := newTestService(t, 1024, 1024, "all")
+	for i := 0; i < 2048; i++ {
+		svc.rememberTusResult(fmt.Sprintf("upload-%d", i), record{})
+	}
+	if len(svc.tusResults) > 1024 {
+		t.Fatalf("cached results = %d, want at most 1024", len(svc.tusResults))
+	}
 }
 
 func TestUploadPageUsesOfficialUppyTusPlugin(t *testing.T) {

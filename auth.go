@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"errors"
+	"mime"
 	"net"
 	"net/http"
 	"strconv"
@@ -18,6 +20,8 @@ const (
 	authSessionTTL    = 7 * 24 * time.Hour
 	maxAuthFailures   = 5
 	authFailureWindow = 5 * time.Minute
+	maxAuthClients    = 1024
+	maxLoginBodyBytes = 8 * 1024
 )
 
 type authFailure struct {
@@ -85,9 +89,9 @@ func (a *auth) signature(payload string) string {
 func (a *auth) allowAttempt(client string, now time.Time) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.pruneFailuresLocked(now)
 	failure, ok := a.failures[client]
-	if !ok || now.Sub(failure.first) >= authFailureWindow {
-		delete(a.failures, client)
+	if !ok {
 		return true
 	}
 	return failure.attempts < maxAuthFailures
@@ -96,13 +100,39 @@ func (a *auth) allowAttempt(client string, now time.Time) bool {
 func (a *auth) failedAttempt(client string, now time.Time) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	a.pruneFailuresLocked(now)
 	failure, ok := a.failures[client]
-	if !ok || now.Sub(failure.first) >= authFailureWindow {
+	if !ok {
+		if len(a.failures) >= maxAuthClients {
+			a.dropOldestFailureLocked()
+		}
 		failure = authFailure{first: now}
 	}
 	failure.attempts++
 	a.failures[client] = failure
 	return failure.attempts >= maxAuthFailures
+}
+
+func (a *auth) pruneFailuresLocked(now time.Time) {
+	for client, failure := range a.failures {
+		if now.Sub(failure.first) >= authFailureWindow {
+			delete(a.failures, client)
+		}
+	}
+}
+
+func (a *auth) dropOldestFailureLocked() {
+	var oldestClient string
+	var oldest time.Time
+	for client, failure := range a.failures {
+		if oldestClient == "" || failure.first.Before(oldest) {
+			oldestClient = client
+			oldest = failure.first
+		}
+	}
+	if oldestClient != "" {
+		delete(a.failures, oldestClient)
+	}
 }
 
 func (a *auth) clearAttempts(client string) {
@@ -155,15 +185,29 @@ func (s *service) login(w http.ResponseWriter, r *http.Request) {
 	client := clientAddress(r)
 	now := time.Now()
 	if !s.auth.allowAttempt(client, now) {
-		writeError(w, http.StatusTooManyRequests, "too many failed authentication attempts")
+		s.loginPage(w, http.StatusTooManyRequests, "登录尝试过于频繁，请 5 分钟后再试。")
 		return
 	}
-	if !s.auth.validPassword(r.FormValue("password")) {
-		if s.auth.failedAttempt(client, now) {
-			writeError(w, http.StatusTooManyRequests, "too many failed authentication attempts")
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/x-www-form-urlencoded" {
+		writeError(w, http.StatusUnsupportedMediaType, "Content-Type must be application/x-www-form-urlencoded")
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginBodyBytes)
+	if err := r.ParseForm(); err != nil {
+		if errors.As(err, new(*http.MaxBytesError)) {
+			writeError(w, http.StatusRequestEntityTooLarge, "login request exceeds maximum size")
 			return
 		}
-		s.loginPage(w, http.StatusUnauthorized)
+		writeError(w, http.StatusBadRequest, "invalid login form")
+		return
+	}
+	if !s.auth.validPassword(r.PostForm.Get("password")) {
+		if s.auth.failedAttempt(client, now) {
+			s.loginPage(w, http.StatusTooManyRequests, "登录尝试过于频繁，请 5 分钟后再试。")
+			return
+		}
+		s.loginPage(w, http.StatusUnauthorized, "密码不正确，请重试。")
 		return
 	}
 	s.auth.clearAttempts(client)

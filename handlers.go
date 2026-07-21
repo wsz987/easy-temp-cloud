@@ -152,6 +152,7 @@ func (s *service) file(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", item.ContentType)
+	w.Header().Set("Content-Disposition", "attachment")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, no-store")
 	http.ServeFile(w, r, path)

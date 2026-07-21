@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"html/template"
 	"io/fs"
 	"net/http"
 	"time"
@@ -12,15 +14,25 @@ import (
 func (s *service) home(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie(authCookieName)
 	if err != nil || !s.auth.validSession(cookie.Value, time.Now()) {
-		s.loginPage(w, http.StatusOK)
+		s.loginPage(w, http.StatusOK, "")
 		return
 	}
 	s.index(w, r)
 }
 
-func (s *service) loginPage(w http.ResponseWriter, status int) {
+func (s *service) loginPage(w http.ResponseWriter, status int, message string) {
 	data, err := fs.ReadFile(webSubtree(), "login.html")
 	if err != nil {
+		writeError(w, http.StatusInternalServerError, "login page unavailable")
+		return
+	}
+	page, err := template.New("login.html").Parse(string(data))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "login page unavailable")
+		return
+	}
+	var body bytes.Buffer
+	if err := page.Execute(&body, struct{ Error string }{Error: message}); err != nil {
 		writeError(w, http.StatusInternalServerError, "login page unavailable")
 		return
 	}
@@ -28,7 +40,7 @@ func (s *service) loginPage(w http.ResponseWriter, status int) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(status)
-	w.Write(data)
+	w.Write(body.Bytes())
 }
 
 // clientConfig exposes the runtime limits an authenticated browser needs to

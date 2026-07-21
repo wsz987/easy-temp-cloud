@@ -5,11 +5,11 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "18000:8080"
     environment:
       LISTEN_ADDR: ":8080"
       DATA_DIR: "/data"
-      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:8080}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-http://localhost:18000}"
       AUTH_PASSWORD: "${AUTH_PASSWORD:?AUTH_PASSWORD is required}"
       MAX_UPLOAD_BYTES: "${MAX_UPLOAD_BYTES:-10GiB}"
       MAX_STORAGE_BYTES: "${MAX_STORAGE_BYTES:-10GiB}"
@@ -20,6 +20,5 @@ services:
       OSS_BUCKET: "${OSS_BUCKET:-}"
       OSS_ACCESS_KEY_ID: "${OSS_ACCESS_KEY_ID:-}"
       OSS_ACCESS_KEY_SECRET: "${OSS_ACCESS_KEY_SECRET:-}"
-      OSS_PUBLIC_BASE_URL: "${OSS_PUBLIC_BASE_URL:-}"
     volumes:
       - ./data:/data

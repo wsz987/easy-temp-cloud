@@ -63,6 +63,8 @@
 
 所有配置通过环境变量或 `.env` 文件提供。复制 `.env.example` 为 `.env` 后按需修改：
 
+程序启动时会自动读取当前工作目录的 `.env`；已有系统环境变量优先，便于 Docker Compose、CI 和生产部署覆盖本地文件配置。
+
 | 变量名 | 默认值 | 说明 |
 | --- | --- | --- |
 | `LISTEN_ADDR` | `:8080` | 服务监听地址。 |
@@ -78,7 +80,6 @@
 | `OSS_BUCKET` | - | OSS Bucket 名称。 |
 | `OSS_ACCESS_KEY_ID` | - | OSS AccessKey ID。 |
 | `OSS_ACCESS_KEY_SECRET` | - | OSS AccessKey Secret。 |
-| `OSS_PUBLIC_BASE_URL` | - | Bucket 的公开访问域名（末尾不带斜杠），节点需要通过它在过期前稳定访问文件。 |
 
 服务每次启动都会生成新的内存签名密钥，因此浏览器登录状态和本地存储的文件分享链接都会失效；重启后重新登录或重新上传即可获得新链接。
 
@@ -120,10 +121,12 @@ ALLOWED_TYPES=all
 | `GET` | `/files/{sha256}?key={file-key}` | 读取本地存储的文件；上传响应会返回完整链接。 |
 | `GET` | `/healthz` | 健康检查，返回 `204 No Content`，可用作容器探针。 |
 
+`pwd` 是兼容命令行客户端的 URL 口令。它可能出现在代理日志、浏览器历史和命令历史中，因此仅应在可信网络中使用；网页上传使用登录会话，不会将密码放进 tus URL。
+
 ### 上传示例
 
 ```bash
-curl -F "file=@picture.png" "http://localhost:18000/api/upload?pwd=short1"
+curl -F "file=@picture.png" "http://localhost:18000/api/upload?pwd=eztCloud@"
 ```
 
 成功响应：
@@ -141,6 +144,7 @@ curl -F "file=@picture.png" "http://localhost:18000/api/upload?pwd=short1"
 - 内容类型不在 `ALLOWED_TYPES` 白名单时返回 `400 Bad Request`。
 - 未携带正确 `pwd` 时返回 `401 Unauthorized`；同一客户端连续错误尝试过多时返回 `429 Too Many Requests`。
 - 返回的本地文件链接是仅对该文件有效的 bearer 链接；它不具备上传或访问其他文件的权限。请像密码一样妥善保存。
+- 文件始终以附件形式下载，不会在本服务的同源页面中直接渲染。
 
 ## 过期与存储机制
 
@@ -154,8 +158,8 @@ curl -F "file=@picture.png" "http://localhost:18000/api/upload?pwd=short1"
 
 设置 `STORAGE_DRIVER=oss` 并填齐所有 `OSS_*` 配置即可启用：
 
-- Bucket 必须可通过 `OSS_PUBLIC_BASE_URL` 被公开读取，节点需要一个在过期前始终有效的稳定 URL。
-- OSS 的文件 URL 由 Bucket 直接公开提供，无法由本服务校验本地分享链接的 `key`；下载鉴权仅适用于 `local` 存储。
+- Bucket 应设为私有读。服务使用阿里云 OSS SDK 生成有效期等于文件保留时间的预签名下载 URL，无需公开读权限。
+- OSS 下载 URL 是临时 bearer 链接；请像密码一样妥善保存，过期后重新上传即可获得新链接。
 - 对象统一存放在 Bucket 内的 `image-host/` 前缀下。
 - 文件的删除与去重仍由本服务管理，服务通过索引追踪每个对象，过期时自动删除。
 

@@ -1,9 +1,46 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestLoadConfigLoadsDotenvFile(t *testing.T) {
+	directory := t.TempDir()
+	if err := os.WriteFile(filepath.Join(directory, ".env"), []byte("AUTH_PASSWORD=dotenv1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	workingDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(directory); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(workingDirectory) })
+
+	previousPassword, hadPassword := os.LookupEnv("AUTH_PASSWORD")
+	if err := os.Unsetenv("AUTH_PASSWORD"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if hadPassword {
+			_ = os.Setenv("AUTH_PASSWORD", previousPassword)
+			return
+		}
+		_ = os.Unsetenv("AUTH_PASSWORD")
+	})
+
+	cfg, err := loadConfig()
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.AuthPassword != "dotenv1" {
+		t.Fatalf("AuthPassword = %q, want value from .env", cfg.AuthPassword)
+	}
+}
 
 func TestLoadConfigParsesRetention(t *testing.T) {
 	t.Setenv("AUTH_PASSWORD", "short1")

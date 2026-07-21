@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"mime/multipart"
 	"net/http"
@@ -103,6 +104,20 @@ func TestLoginCreatesSessionForProtectedRoutes(t *testing.T) {
 	}
 }
 
+func TestLoginRejectsOversizedRequestBody(t *testing.T) {
+	svc := newAuthTestService(t)
+	form := url.Values{"password": {strings.Repeat("a", 16*1024)}}
+	request := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response := httptest.NewRecorder()
+
+	newRouter(svc).ServeHTTP(response, request)
+
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("login status = %d, want %d", response.Code, http.StatusRequestEntityTooLarge)
+	}
+}
+
 func TestUploadWithPasswordReturnsFileSpecificShareLink(t *testing.T) {
 	svc := newAuthTestService(t)
 	router := newRouter(svc)
@@ -175,6 +190,44 @@ func TestAuthenticationFailuresAreRateLimited(t *testing.T) {
 	router.ServeHTTP(response, uploadRequest(t, "/api/upload?pwd=short1"))
 	if response.Code != http.StatusTooManyRequests {
 		t.Fatalf("limited request status = %d, want %d", response.Code, http.StatusTooManyRequests)
+	}
+}
+
+func TestLoginRateLimitRendersLoginPageWithError(t *testing.T) {
+	router := newRouter(newAuthTestService(t))
+	for attempt := 1; attempt <= maxAuthFailures; attempt++ {
+		form := url.Values{"password": {"wrong"}}
+		request := httptest.NewRequest(http.MethodPost, "/login", strings.NewReader(form.Encode()))
+		request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+
+		if attempt < maxAuthFailures {
+			continue
+		}
+		if response.Code != http.StatusTooManyRequests {
+			t.Fatalf("rate-limited login status = %d, want %d", response.Code, http.StatusTooManyRequests)
+		}
+		if got := response.Header().Get("Content-Type"); got != "text/html; charset=utf-8" {
+			t.Fatalf("Content-Type = %q, want login HTML", got)
+		}
+		if !strings.Contains(response.Body.String(), "登录尝试过于频繁") {
+			t.Fatalf("rate-limited login page does not contain an error: %s", response.Body.String())
+		}
+	}
+}
+
+func TestAuthenticationFailureTrackingIsBounded(t *testing.T) {
+	auth, err := newAuth("short1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	for i := 0; i < 2048; i++ {
+		auth.failedAttempt(fmt.Sprintf("client-%d", i), now)
+	}
+	if len(auth.failures) > 1024 {
+		t.Fatalf("tracked failures = %d, want at most 1024", len(auth.failures))
 	}
 }
 

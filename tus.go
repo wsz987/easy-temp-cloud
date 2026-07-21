@@ -22,6 +22,7 @@ import (
 const (
 	tusStagingDir = "tus"
 	tusSessionTTL = 2 * time.Hour
+	maxTusResults = 1024
 )
 
 // initTus configures the standard tus protocol implementation. FileStore owns
@@ -97,14 +98,24 @@ func (s *service) finishTusUpload(event handler.HookEvent) (handler.HTTPResponse
 			} else {
 				s.release(event.Upload.Size)
 				os.Remove(event.Upload.Storage["InfoPath"])
-				s.mu.Lock()
-				s.tusResults[event.Upload.ID] = created
-				s.mu.Unlock()
+				s.rememberTusResult(event.Upload.ID, created)
 				return handler.HTTPResponse{}, nil
 			}
 		}
 	}
 	return handler.HTTPResponse{}, s.failTusUpload(event.Upload, err)
+}
+
+func (s *service) rememberTusResult(id string, item record) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, exists := s.tusResults[id]; !exists && len(s.tusResults) >= maxTusResults {
+		for oldest := range s.tusResults {
+			delete(s.tusResults, oldest)
+			break
+		}
+	}
+	s.tusResults[id] = item
 }
 
 func (s *service) failTusUpload(info handler.FileInfo, err error) error {

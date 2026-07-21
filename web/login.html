@@ -38,6 +38,7 @@
             <span class="state-chip">需要密码</span>
           </div>
 
+          {{if .Error}}<p class="login-error" role="alert">{{.Error}}</p>{{end}}
           <form class="login-form" action="/login" method="post">
             <label for="password">访问密码</label>
             <div class="password-field">
