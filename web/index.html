@@ -3,62 +3,141 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f8f7fb">
+  <meta name="theme-color" content="#6366f1">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="description" content="easy-temp-cloud 临时文件托管 - 上传页面">
-  <title>easy-temp-cloud · 上传</title>
+  <meta name="description" content="easy-temp-cloud 极简极速临时文件托管与跨端传输">
+  <title>easy-temp-cloud · 临时文件托管网盘</title>
   <link rel="stylesheet" href="/assets/vendor/uppy.min.css">
   <link rel="stylesheet" href="/assets/styles.css">
 </head>
 <body>
-  <div class="page">
-    <header class="hero">
-      <div class="badge" id="service-state" aria-live="polite">
-        <span class="badge-dot"></span>
-        <span>服务正常</span>
+  <!-- Global Drag & Drop Overlay (PC) -->
+  <div id="drag-overlay" class="drag-overlay" aria-hidden="true">
+    <div class="drag-dropzone">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+      <h3>松开鼠标即可上传文件</h3>
+      <p>支持多文件拖拽投放与自动传输</p>
+    </div>
+  </div>
+
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand-bar">
+        <a href="/" class="brand-logo">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M17.5 19.5 16 21H8l-1.5-1.5M12 3v13.5m-4-4 4 4 4-4"/>
+            <path d="M20 16.5a4.5 4.5 0 0 0-1.5-8.7A7 7 0 0 0 5 10.5 4.5 4.5 0 0 0 4 19.5h16"/>
+          </svg>
+          <span>easy-temp-cloud</span>
+        </a>
+        <div class="service-status" id="service-status" aria-live="polite">
+          <span class="status-dot"></span>
+          <span id="service-label">服务正常运行</span>
+        </div>
       </div>
-      <h1>轻松共享，<span>临时托管</span></h1>
-      <p>拖拽文件到下方上传区，即可获得可分享的下载链接。文件在保留期后自动清理。</p>
+
+      <h1 class="hero-title">极简共享，<span>临时文件托管</span></h1>
+      <p class="hero-subtitle">全平台流畅体验，支持 PC 拖拽/粘贴与 iOS/Android 二维码扫码与原生分享</p>
+
+      <!-- Workspace Navigation Tabs -->
+      <nav class="nav-tabs" aria-label="工作台切换">
+        <button type="button" class="tab-btn is-active" id="tab-upload-btn" data-tab="upload">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span>上传文件</span>
+        </button>
+        <button type="button" class="tab-btn" id="tab-history-btn" data-tab="history">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+            <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+          </svg>
+          <span>传输历史</span>
+          <span class="tab-badge" id="history-count">0</span>
+        </button>
+      </nav>
     </header>
 
-    <main>
-      <section class="card upload-card" aria-labelledby="upload-title">
-        <div class="card-head">
+    <main class="app-main">
+      <!-- Upload Workspace Section -->
+      <section id="upload-section" class="card upload-card" aria-labelledby="upload-title">
+        <div class="card-header">
           <div class="card-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <span id="upload-title">上传文件</span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+            <span id="upload-title">文件传输大厅</span>
           </div>
-          <span class="state-chip" id="batch-state">等待文件</span>
+          <span class="pill" id="batch-state">准备就绪</span>
         </div>
 
         <div class="meta-bar" id="meta-bar">
-          <span class="pill" id="pill-maxsize">单文件 <strong>—</strong></span>
-          <span class="pill" id="pill-chunk">分片 <strong>—</strong></span>
-          <span class="pill" id="pill-retention">保留 <strong>—</strong></span>
-          <span class="pill pill-types" id="pill-types">类型 <strong>—</strong></span>
+          <span class="pill" id="pill-maxsize">单文件上限 <strong>—</strong></span>
+          <span class="pill" id="pill-chunk">分片大小 <strong>—</strong></span>
+          <span class="pill" id="pill-retention">保留时间 <strong>—</strong></span>
+          <span class="pill" id="pill-types">允许格式 <strong>—</strong></span>
         </div>
 
         <div id="uppy"></div>
       </section>
 
-      <section id="links" class="card results-shell" hidden aria-labelledby="links-title">
-        <div class="results-head">
-          <div class="results-title">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-            <span id="links-title">分享链接</span>
+      <!-- History & Links Section -->
+      <section id="history-section" class="card history-card" hidden aria-labelledby="history-title">
+        <div class="card-header">
+          <div class="card-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+              <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            <span id="history-title">已被生成的分享链接</span>
           </div>
-          <button type="button" class="clear-history" id="clear-history">清空历史</button>
+          <div class="card-actions">
+            <button type="button" class="btn btn-sm btn-primary" id="copy-all-btn">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+              </svg>
+              一键复制全部
+            </button>
+            <button type="button" class="btn btn-sm btn-danger-ghost" id="clear-history-btn">清空历史</button>
+          </div>
         </div>
-        <ul id="link-list"></ul>
+
+        <ul id="link-list" class="link-list"></ul>
       </section>
     </main>
   </div>
 
+  <!-- QR Code Modal Dialog -->
+  <div id="qr-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-card">
+      <h3 class="modal-title">扫码在移动端打开</h3>
+      <div id="qr-code-body" class="qr-container"></div>
+      <div id="qr-url-text" class="qr-url-display"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary" id="qr-copy-btn">复制链接</button>
+        <button type="button" class="btn" id="qr-close-btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+
   <script type="module" src="/assets/app.js"></script>
   <noscript>
-    <p style="color:#1f1a2e;text-align:center;padding:24px">本页需要 JavaScript 才能上传文件，请启用浏览器脚本后刷新。</p>
+    <p style="color:#0f172a;text-align:center;padding:24px">本页需要 JavaScript 才能上传文件，请启用浏览器脚本后刷新。</p>
   </noscript>
 </body>
 </html>
