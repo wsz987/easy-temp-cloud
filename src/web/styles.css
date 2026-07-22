@@ -477,6 +477,11 @@ body {
   max-width: 100% !important;
 }
 
+/* Uppy makes the waiting action bar full width; place its upload button last. */
+#uppy .uppy-StatusBar.is-waiting .uppy-StatusBar-actions {
+  justify-content: flex-end !important;
+}
+
 #uppy .uppy-DashboardContent-title {
   color: var(--text-primary) !important;
   font-weight: 650 !important;
@@ -498,12 +503,17 @@ body {
   margin-bottom: 16px !important;
 }
 
-#uppy .uppy-Dashboard-browse,
-#uppy .uppy-StatusBar-actionBtn:not(.uppy-StatusBar-actionBtn--retry) {
+#uppy .uppy-Dashboard-browse {
   color: var(--primary) !important;
   font-weight: 750 !important;
   text-decoration: underline !important;
   text-underline-offset: 3px !important;
+}
+
+#uppy .uppy-StatusBar-actionBtn:not(.uppy-StatusBar-actionBtn--retry) {
+  color: var(--primary) !important;
+  font-weight: 750 !important;
+  text-decoration: none !important;
 }
 
 #uppy .uppy-Dashboard-AddFiles-info,
