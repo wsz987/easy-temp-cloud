@@ -227,7 +227,7 @@ function renderMeta(cfg) {
   }
   set('pill-maxsize', iconPill('单文件上限', formatBytes(cfg.maxFileSize)))
   set('pill-chunk', iconPill('分片大小', formatBytes(cfg.chunkSize)))
-  set('pill-retention', iconPill('保留时间', cfg.retention || '1d'))
+  set('pill-retention', iconPill('保留时间', formatRetention(cfg.retention || '1d')))
   set('pill-types', iconPill('允许格式', cfg.allowedTypes || '全部格式'))
 }
 
@@ -614,6 +614,14 @@ function formatBytes(n) {
   return `${v >= 100 || i === 0 ? Math.round(v) : v.toFixed(1)} ${units[i]}`
 }
 
+function formatRetention(raw) {
+  const m = String(raw || '').match(/^(\d+)([mhdw])$/)
+  if (!m) return String(raw || '-')
+  const [, n, unit] = m
+  const map = { m: '分钟', h: '小时', d: '天', w: '周' }
+  return `${n} ${map[unit]}`
+}
+
 function allowedFileTypes(raw) {
   if (!raw || raw === 'all') return null
   const groups = {
@@ -678,6 +686,7 @@ function zhLocale() {
       pauseUpload: '暂停上传',
       resumeUpload: '继续上传',
       retryUpload: '重试',
+      retry: '重试',
       cancel: '取消',
       done: '完成',
       xFilesSelected: '已选择 %{smart_count} 个文件',

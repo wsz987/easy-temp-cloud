@@ -451,7 +451,7 @@ body {
 }
 
 #uppy .uppy-Dashboard-browse,
-#uppy .uppy-StatusBar-actionBtn {
+#uppy .uppy-StatusBar-actionBtn:not(.uppy-StatusBar-actionBtn--retry) {
   color: var(--primary) !important;
   font-weight: 750 !important;
   text-decoration: underline !important;
@@ -488,6 +488,36 @@ body {
   background: var(--primary-hover) !important;
   box-shadow: 0 6px 20px rgba(99, 102, 241, 0.45) !important;
   transform: translateY(-1px);
+}
+
+/* Retry upload button: restore the red pill look (overridden above by the
+   generic .uppy-StatusBar-actionBtn rule) so the icon + 重试 text read
+   correctly instead of inheriting the primary underline style. */
+#uppy .uppy-StatusBar-actionBtn--retry {
+  color: #fff !important;
+  background-color: var(--danger) !important;
+  border-radius: var(--radius-md) !important;
+  text-decoration: none !important;
+  text-underline-offset: 0 !important;
+  padding: 6px 14px 6px 30px !important;
+  height: auto !important;
+  line-height: 1.2 !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  box-shadow: 0 4px 14px rgba(239, 68, 68, 0.35) !important;
+  transition: all 0.2s ease !important;
+}
+
+#uppy .uppy-StatusBar-actionBtn--retry:hover {
+  background-color: #dc2626 !important;
+  box-shadow: 0 6px 20px rgba(239, 68, 68, 0.45) !important;
+  transform: translateY(-1px);
+}
+
+#uppy .uppy-StatusBar-actionBtn--retry svg {
+  inset-inline-start: 12px !important;
+  top: 50% !important;
+  transform: translateY(-50%);
 }
 
 /* Global Drag & Drop Overlay */

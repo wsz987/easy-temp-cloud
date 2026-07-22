@@ -47,6 +47,35 @@
 
 > 默认端口映射为 `8080:8080`，可通过环境变量 `HOST_PORT` 修改宿主机侧端口（如 `HOST_PORT=9090` 映射为 `9090:8080`），容器内仍监听 `:8080`。数据持久化在 `./data` 目录。
 
+### 反向代理 / HTTPS 部署
+
+生产环境通常在前面加一层 Nginx（或 Caddy 等）做 TLS 终止，再把请求反代到容器的 `:8080`。此时 `PUBLIC_BASE_URL` 应填写对外的 HTTPS 地址，例如：
+
+```bash
+PUBLIC_BASE_URL=https://img.example.com
+```
+
+反代必须把原始协议和主机名透传给后端，否则网页里分片上传的 tus 地址会变成 `http://`，浏览器会按混合内容（mixed content）拦截，或被 Nginx 的 `http → https` 301 跳转打断 `PATCH`/`HEAD` 请求。服务端已开启 `RespectForwardedHeaders`，会读取下列头重建正确地址：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Forwarded-Host  $host;
+    proxy_set_header X-Forwarded-Proto $scheme;   # https
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+
+    # tus 大文件分片上传需要
+    proxy_http_version 1.1;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_read_timeout 24h;
+    client_max_body_size 0;   # 不限，单文件上限由 MAX_UPLOAD_BYTES 控制
+}
+```
+
+只要反代发送了 `X-Forwarded-Proto: https`，返回的文件链接和分片上传地址都会使用 `https://`，无需额外配置。
+
 ## 功能特性
 
 - **流式上传**：文件以流的方式写入磁盘，边写边计算 SHA-256 摘要，内存占用恒定。
@@ -177,7 +206,7 @@ go build -o easy-temp-cloud .
 
 ### 本地开发（自动重启）
 
-开发时推荐使用 [Air](https://github.com/air-verse/air) 监听 Go 和网页资源文件。保存 `.go`、`web/*.html`、`web/*.css`、`web/*.js` 或 `web/*.mjs` 后，Air 会重建并重启服务；因为网页资源通过 `go:embed` 编入二进制，Air 的代理会在新进程启动后自动刷新浏览器页面。
+开发时推荐使用 [Air](https://github.com/air-verse/air) 监听 Go 和网页资源文件。保存根目录或 `internal/` 下的 `.go` 文件，以及 `src/web/*.html`、`src/web/*.css`、`src/web/*.js` 或 `src/web/*.mjs` 后，Air 会重建并重启服务；因为网页资源通过 `go:embed` 编入二进制，Air 的代理会在新进程启动后自动刷新浏览器页面。
 
 ```powershell
 go install github.com/air-verse/air@latest

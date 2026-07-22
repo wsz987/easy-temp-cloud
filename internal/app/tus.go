@@ -1,4 +1,4 @@
-package main
+package app
 
 import (
 	"context"
@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"easy-temp-cloud/internal/auth"
 
 	"github.com/tus/tusd/v2/pkg/filestore"
 	"github.com/tus/tusd/v2/pkg/handler"
@@ -44,8 +46,14 @@ func (s *service) initTus() error {
 		StoreComposer:                    composer,
 		MaxSize:                          s.config.MaxUploadBytes,
 		DisableDownload:                  true,
+		// Respect X-Forwarded-Proto / X-Forwarded-Host / Forwarded so that
+		// behind a TLS-terminating reverse proxy (e.g. nginx serving HTTPS and
+		// proxying to this service over plain HTTP) the absolute upload URLs
+		// in tus responses use the public https scheme instead of http, which
+		// would otherwise trigger mixed-content blocking in the browser.
+		RespectForwardedHeaders:         true,
 		PreUploadCreateCallback:          s.beforeTusCreate,
-		PreFinishResponseCallback:        s.finishTusUpload,
+		PreFinishResponseCallback:       s.finishTusUpload,
 		PreUploadTerminateCallback:       s.beforeTusTerminate,
 		GracefulRequestCompletionTimeout: 15 * time.Second,
 	})
@@ -88,7 +96,7 @@ func (s *service) finishTusUpload(event handler.HookEvent) (handler.HTTPResponse
 		contentType, detectErr := detectContentType(path)
 		if detectErr != nil {
 			err = detectErr
-		} else if !s.policy.allows(contentType) {
+		} else if !s.policy.Allows(contentType) {
 			err = fmt.Errorf("content type %q is not allowed (allowed types: %s)", contentType, s.policy)
 		} else {
 			id := fmt.Sprintf("%x", hash)
@@ -213,7 +221,7 @@ func (s *service) removeTusFiles(info handler.FileInfo) {
 
 func newTusID() string {
 	bytes := make([]byte, 16)
-	if _, err := readRand(bytes); err != nil {
+	if _, err := auth.ReadRand(bytes); err != nil {
 		return fmt.Sprintf("%d", time.Now().UnixNano())
 	}
 	return hex.EncodeToString(bytes)

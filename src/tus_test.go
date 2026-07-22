@@ -119,6 +119,41 @@ func TestTusDeleteReleasesReservation(t *testing.T) {
 	tusCreate(t, router, 5)
 }
 
+// TestTusRespectsForwardedProto guards the mixed-content fix: behind a
+// TLS-terminating reverse proxy, nginx sets X-Forwarded-Proto: https, and the
+// tus upload Location must use https so browsers do not block the upload as
+// mixed content. See tus.go RespectForwardedHeaders.
+func TestTusRespectsForwardedProto(t *testing.T) {
+	svc := newTestService(t, 1024, 1024, "all")
+	router := testRouter(svc)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/uploads/", nil)
+	req.Host = "img.example.com"
+	req.Header.Set("Tus-Resumable", tusVersion)
+	req.Header.Set("Upload-Length", "5")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "img.example.com")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create status = %d: %s", rec.Code, rec.Body.String())
+	}
+	location := rec.Header().Get("Location")
+	if location == "" {
+		t.Fatal("create response has no Location")
+	}
+	parsed, err := url.Parse(location)
+	if err != nil {
+		t.Fatalf("parse Location: %v", err)
+	}
+	if parsed.Scheme != "https" {
+		t.Fatalf("Location scheme = %q, want https (mixed-content fix)", parsed.Scheme)
+	}
+	if parsed.Host != "img.example.com" {
+		t.Fatalf("Location host = %q, want img.example.com", parsed.Host)
+	}
+}
+
 func TestTusRejectsFileOverSingleFileLimit(t *testing.T) {
 	svc := newTestService(t, 4, 10, "all")
 	router := testRouter(svc)
