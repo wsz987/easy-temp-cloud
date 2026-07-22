@@ -56,6 +56,7 @@ func (s *service) upload(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, status, map[string]any{
 		"url":     s.urlFor(r, created),
+		"id":      created.ID,
 		"created": created.Created.UTC().Format(time.RFC3339),
 	})
 }
@@ -159,6 +160,26 @@ func (s *service) file(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Cache-Control", "private, no-store")
 	http.ServeFile(w, r, path)
+}
+
+// deleteFile removes a stored object and invalidates its share link. It is
+// session-protected by the router and never accepts an object key from clients.
+func (s *service) deleteFile(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	if !sha256Pattern.MatchString(id) {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	if err := s.deleteRecord(r.Context(), id); err != nil {
+		if errors.Is(err, errRecordNotFound) {
+			writeError(w, http.StatusNotFound, "not found")
+			return
+		}
+		log.Printf("delete file %s: %v", id, err)
+		writeError(w, http.StatusInternalServerError, "delete stored file")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // writeJSON encodes value as JSON with the given status. It does not flush; the

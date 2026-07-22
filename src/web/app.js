@@ -11,6 +11,8 @@ const isIOS = mobilePlatform === 'ios'
 const isAndroid = mobilePlatform === 'android'
 const STORAGE_KEY = 'easy-temp-cloud:history'
 const MAX_HISTORY = 50
+const MAX_THUMBNAIL_DATA_URL_LENGTH = 48 * 1024
+let activeDeleteItem = null
 
 init().catch((err) => {
   console.error('Uppy initialization failed', err)
@@ -75,17 +77,25 @@ async function init() {
     if (ok.length) showToast(`成功上传 ${ok.length} 个文件`, 'success')
     if (fail.length) showToast(`${fail.length} 个文件上传失败`, 'error')
 
-    const urls = await Promise.all(ok.map(resolvePublicURL))
-    const valid = urls.filter(Boolean)
+    const [results, thumbnails] = await Promise.all([
+      Promise.all(ok.map(resolvePublicURL)),
+      createHistoryThumbnails(ok),
+    ])
     
     // Add to history with file meta
-    const items = ok.map((file, idx) => ({
-      url: valid[idx],
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      createdAt: Date.now(),
-    })).filter((item) => item.url)
+    const items = ok.map((file, idx) => {
+      const result = results[idx]
+      if (!result || !result.url) return null
+      return {
+        url: result.url,
+        id: result.id,
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        thumbnail: thumbnails[idx],
+        createdAt: Date.now(),
+      }
+    }).filter(Boolean)
 
     addToHistory(items)
     updateHistoryBadge()
@@ -93,7 +103,7 @@ async function init() {
     setBatchState(fail.length ? '部分失败' : '上传完成', fail.length ? 'error' : 'complete')
 
     // Auto switch to history tab or notify if multiple files uploaded
-    if (valid.length > 0) {
+    if (items.length > 0) {
       setTimeout(() => switchTab('history'), 800)
     }
   })
@@ -229,6 +239,22 @@ function renderMeta(cfg) {
   set('pill-chunk', iconPill('分片大小', formatBytes(cfg.chunkSize)))
   set('pill-retention', iconPill('保留时间', formatRetention(cfg.retention || '1d')))
   set('pill-types', iconPill('允许格式', cfg.allowedTypes || '全部格式'))
+  renderClientAPI(cfg.apiPassword)
+}
+
+function renderClientAPI(password) {
+  const row = document.getElementById('client-api')
+  const input = document.getElementById('client-api-url')
+  if (!row || !input) return
+
+  if (typeof password !== 'string' || !password) {
+    row.hidden = true
+    input.value = ''
+    return
+  }
+
+  input.value = `${window.location.origin}/api/upload?pwd=${encodeURIComponent(password)}`
+  row.hidden = false
 }
 
 function iconPill(label, value) {
@@ -317,9 +343,7 @@ function renderLinks(items) {
     li.className = 'link-row'
 
     // Icon
-    const iconDiv = document.createElement('div')
-    iconDiv.className = 'file-type-icon'
-    iconDiv.innerHTML = getFileTypeIcon(name, type)
+    const iconDiv = createHistoryPreview(item, name, type)
 
     // Info Wrap
     const infoDiv = document.createElement('div')
@@ -397,12 +421,7 @@ function renderLinks(items) {
     delBtn.className = 'btn btn-sm btn-danger-ghost'
     delBtn.innerHTML = `${svgIcon('trash')}`
     delBtn.title = '从列表中删除'
-    delBtn.onclick = () => {
-      deleteFromHistory(url)
-      updateHistoryBadge()
-      renderLinks(loadHistory())
-      showToast('已移除该记录', 'info')
-    }
+    delBtn.onclick = () => showDeleteLinkModal(item)
 
     actionsDiv.append(copyBtn, shareBtn)
     if (qrBtn) actionsDiv.append(qrBtn)
@@ -416,6 +435,12 @@ function renderLinks(items) {
 // ---- Global Actions (Copy All, Clear History, QR Modal) --------------------
 
 function setupGlobalActions() {
+
+  document.getElementById('copy-api-url-btn')?.addEventListener('click', () => {
+    const apiURL = document.getElementById('client-api-url')?.value
+    if (apiURL) copyToClipboard(apiURL)
+  })
+
   // Clear History
   document.getElementById('clear-history-btn')?.addEventListener('click', () => {
     if (confirm('确定要清空全部上传历史记录吗？')) {
@@ -460,6 +485,19 @@ function setupGlobalActions() {
       hideQRModal()
     }
   })
+
+  const deleteModal = document.getElementById('delete-link-modal')
+  const deleteCancelBtn = document.getElementById('delete-link-cancel-btn')
+  const deleteConfirmBtn = document.getElementById('delete-link-confirm-btn')
+  deleteCancelBtn?.addEventListener('click', hideDeleteLinkModal)
+  deleteModal?.addEventListener('click', (e) => {
+    if (e.target === deleteModal) hideDeleteLinkModal()
+  })
+  deleteConfirmBtn?.addEventListener('click', confirmDeleteLink)
+
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideDeleteLinkModal()
+  })
 }
 
 function showQRModal(url) {
@@ -479,6 +517,69 @@ function hideQRModal() {
   if (!modal) return
   modal.classList.remove('is-active')
   modal.setAttribute('aria-hidden', 'true')
+}
+
+function showDeleteLinkModal(item) {
+  const modal = document.getElementById('delete-link-modal')
+  const name = document.getElementById('delete-link-name')
+  const checkbox = document.getElementById('delete-resource-checkbox')
+  const hint = document.getElementById('delete-resource-hint')
+  const confirmBtn = document.getElementById('delete-link-confirm-btn')
+  if (!modal || !name || !checkbox || !hint || !confirmBtn) return
+
+  activeDeleteItem = item
+  const resourceID = getResourceID(item)
+  const itemName = typeof item === 'object' && item.name ? item.name : getHistoryURL(item)
+  name.textContent = itemName
+  checkbox.checked = false
+  checkbox.disabled = !resourceID
+  hint.textContent = resourceID
+    ? '删除后分享链接将立即失效，且无法恢复。'
+    : '此历史记录缺少资源标识，只能从当前浏览器移除。'
+  confirmBtn.disabled = false
+  modal.classList.add('is-active')
+  modal.setAttribute('aria-hidden', 'false')
+}
+
+function hideDeleteLinkModal() {
+  const modal = document.getElementById('delete-link-modal')
+  if (!modal) return
+  modal.classList.remove('is-active')
+  modal.setAttribute('aria-hidden', 'true')
+  activeDeleteItem = null
+}
+
+async function confirmDeleteLink() {
+  const item = activeDeleteItem
+  const checkbox = document.getElementById('delete-resource-checkbox')
+  const confirmBtn = document.getElementById('delete-link-confirm-btn')
+  if (!item || !checkbox || !confirmBtn) return
+
+  const url = getHistoryURL(item)
+  const resourceID = getResourceID(item)
+  const deleteResource = checkbox.checked && resourceID
+  confirmBtn.disabled = true
+  try {
+    if (deleteResource) {
+      const response = await fetch(`/api/files/${encodeURIComponent(resourceID)}`, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      })
+      if (!response.ok && response.status !== 404) {
+        const body = await response.json().catch(() => ({}))
+        throw new Error(body.error || `HTTP ${response.status}`)
+      }
+    }
+    deleteFromHistory(url)
+    updateHistoryBadge()
+    renderLinks(loadHistory())
+    hideDeleteLinkModal()
+    showToast(deleteResource ? '资源文件和历史记录已删除' : '已移除该记录', 'info')
+  } catch (error) {
+    console.error('Delete shared file failed', error)
+    showToast(`删除资源文件失败：${error.message}`, 'error')
+    confirmBtn.disabled = false
+  }
 }
 
 // ---- LocalStorage History Management --------------------------------------
@@ -522,6 +623,143 @@ function deleteFromHistory(urlToDelete) {
     return u !== urlToDelete
   })
   saveHistory(filtered)
+}
+
+function getHistoryURL(item) {
+  return typeof item === 'string' ? item : item.url
+}
+
+function getResourceID(item) {
+  if (typeof item === 'object' && /^[a-f0-9]{64}$/.test(item.id || '')) return item.id
+  try {
+    const url = new URL(getHistoryURL(item), window.location.href)
+    const match = url.origin === window.location.origin && url.pathname.match(/^\/files\/([a-f0-9]{64})$/)
+    return match ? match[1] : ''
+  } catch {
+    return ''
+  }
+}
+
+async function createHistoryThumbnails(files) {
+  const thumbnails = new Array(files.length).fill('')
+  let nextIndex = 0
+  const workers = Array.from({ length: Math.min(2, files.length) }, async () => {
+    while (nextIndex < files.length) {
+      const index = nextIndex++
+      thumbnails[index] = await createHistoryThumbnail(files[index])
+    }
+  })
+  await Promise.all(workers)
+  return thumbnails
+}
+
+async function createHistoryThumbnail(file) {
+  const blob = file?.data
+  const type = file?.type || blob?.type || ''
+  if (!(blob instanceof Blob)) return ''
+
+  try {
+    if (type.startsWith('image/')) return await createImageThumbnail(blob)
+    if (type.startsWith('video/')) return await createVideoThumbnail(blob)
+  } catch (error) {
+    console.debug('Could not generate history thumbnail', error)
+  }
+  return ''
+}
+
+async function createImageThumbnail(blob) {
+  const url = URL.createObjectURL(blob)
+  try {
+    const image = new Image()
+    image.src = url
+    if (image.decode) {
+      await image.decode()
+    } else {
+      await new Promise((resolve, reject) => {
+        image.onload = resolve
+        image.onerror = () => reject(new Error('image unavailable'))
+      })
+    }
+    return renderThumbnail(image, image.naturalWidth, image.naturalHeight)
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
+
+async function createVideoThumbnail(blob) {
+  const url = URL.createObjectURL(blob)
+  const video = document.createElement('video')
+  video.muted = true
+  video.playsInline = true
+  video.preload = 'metadata'
+  video.src = url
+  try {
+    await new Promise((resolve, reject) => {
+      video.onloadeddata = resolve
+      video.onerror = () => reject(new Error('video metadata unavailable'))
+    })
+    if (Number.isFinite(video.duration) && video.duration > 0) {
+      video.currentTime = Math.min(0.5, video.duration / 2)
+      await new Promise((resolve, reject) => {
+        video.onseeked = resolve
+        video.onerror = () => reject(new Error('video frame unavailable'))
+      })
+    }
+    return renderThumbnail(video, video.videoWidth, video.videoHeight)
+  } finally {
+    video.removeAttribute('src')
+    video.load()
+    URL.revokeObjectURL(url)
+  }
+}
+
+function renderThumbnail(source, width, height) {
+  if (!width || !height) return ''
+  const canvas = document.createElement('canvas')
+  const context = canvas.getContext('2d')
+  if (!context) return ''
+
+  const render = (maxWidth, maxHeight, quality) => {
+    const scale = Math.min(maxWidth / width, maxHeight / height, 1)
+    canvas.width = Math.max(1, Math.round(width * scale))
+    canvas.height = Math.max(1, Math.round(height * scale))
+    context.drawImage(source, 0, 0, canvas.width, canvas.height)
+    return canvas.toDataURL('image/jpeg', quality)
+  }
+
+  let thumbnail = render(160, 112, 0.72)
+  if (thumbnail.length > MAX_THUMBNAIL_DATA_URL_LENGTH) {
+    thumbnail = render(96, 68, 0.6)
+  }
+  return thumbnail.length <= MAX_THUMBNAIL_DATA_URL_LENGTH ? thumbnail : ''
+}
+
+function createHistoryPreview(item, name, type) {
+  const preview = typeof item === 'object' ? item.thumbnail : ''
+  const iconDiv = document.createElement('div')
+  iconDiv.className = 'file-type-icon'
+  if (!isSafeThumbnail(preview)) {
+    iconDiv.innerHTML = getFileTypeIcon(name, type)
+    return iconDiv
+  }
+
+  const image = document.createElement('img')
+  image.className = 'history-thumbnail'
+  image.src = preview
+  image.alt = `${name || '文件'}缩略图`
+  iconDiv.classList.add('has-thumbnail')
+  iconDiv.appendChild(image)
+  if (type.startsWith('video/')) {
+    const badge = document.createElement('span')
+    badge.className = 'history-video-badge'
+    badge.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 7 8 5-8 5z"/></svg>'
+    iconDiv.appendChild(badge)
+  }
+  return iconDiv
+}
+
+function isSafeThumbnail(value) {
+  return typeof value === 'string' && value.length <= MAX_THUMBNAIL_DATA_URL_LENGTH && /^data:image\/(jpeg|png|webp);base64,/.test(value)
 }
 
 // ---- Toast System ---------------------------------------------------------
@@ -655,7 +893,7 @@ async function resolvePublicURL(file) {
     const response = await fetch(`${uploadURL.replace(/\/$/, '')}/result`)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const result = await response.json()
-    return result.url || null
+    return result.url ? { url: result.url, id: result.id || '' } : null
   } catch (error) {
     console.error('Fetch completed upload URL failed', error)
     return null
@@ -680,6 +918,8 @@ function zhLocale() {
       browseFiles: '浏览文件',
       dropPasteFiles: '拖拽文件到这里，或 %{browse}',
       dropHint: '拖放文件到这里上传',
+      addMore: '添加更多',
+      addMoreFiles: '添加更多文件',
       upload: '开始上传',
       uploadXFiles: '开始上传 %{smart_count} 个文件',
       uploadXNewFiles: '上传 %{smart_count} 个新文件',

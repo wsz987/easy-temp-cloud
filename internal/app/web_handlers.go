@@ -62,6 +62,7 @@ func (s *service) clientConfig(w http.ResponseWriter, r *http.Request) {
 		"maxChunkSize": config.MaxChunkSize,
 		"allowedTypes": s.policy.String(),
 		"retention":    formatRetention(s.config.Retention),
+		"apiPassword":  s.config.AuthPassword,
 	})
 }
 
@@ -110,6 +111,7 @@ func (s *service) tusResult(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"url":     s.urlFor(r, item),
+		"id":      item.ID,
 		"created": item.Created.UTC().Format(time.RFC3339),
 	})
 }

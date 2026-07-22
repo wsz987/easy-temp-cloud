@@ -12,6 +12,7 @@ func NewRouter(svc *service) *http.ServeMux {
 	mux.HandleFunc("POST /login", svc.login)
 	mux.HandleFunc("POST /logout", svc.logout)
 	mux.Handle("GET /api/config", svc.requireSession(http.HandlerFunc(svc.clientConfig)))
+	mux.Handle("DELETE /api/files/{id}", svc.requireSession(http.HandlerFunc(svc.deleteFile)))
 	mux.Handle("POST /api/upload", svc.requirePasswordQuery(http.HandlerFunc(svc.upload)))
 	mux.Handle("GET /api/uploads/{id}/result", svc.requireSession(http.HandlerFunc(svc.tusResult)))
 	mux.Handle("/api/uploads/", svc.requireSession(http.StripPrefix("/api/uploads/", svc.tus)))

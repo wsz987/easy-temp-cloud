@@ -55,7 +55,7 @@
 PUBLIC_BASE_URL=https://img.example.com
 ```
 
-反代必须把原始协议和主机名透传给后端，否则网页里分片上传的 tus 地址会变成 `http://`，浏览器会按混合内容（mixed content）拦截，或被 Nginx 的 `http → https` 301 跳转打断 `PATCH`/`HEAD` 请求。服务端已开启 `RespectForwardedHeaders`，会读取下列头重建正确地址：
+反代必须把原始协议和主机名透传给后端，否则网页里分片上传的 tus 地址会变成 `http://`，浏览器会按混合内容（mixed content）拦截，或被 Nginx 的 `http → https` 301 跳转打断 `PATCH`/`HEAD` 请求。服务端的 tus 处理器已开启 `RespectForwardedHeaders`，会读取下列由反向代理覆盖的头重建上传地址：
 
 ```nginx
 location / {
@@ -74,7 +74,7 @@ location / {
 }
 ```
 
-只要反代发送了 `X-Forwarded-Proto: https`，返回的文件链接和分片上传地址都会使用 `https://`，无需额外配置。
+应用默认不使用 `X-Forwarded-*` 等代理请求头推导文件链接的主机名与协议。文件链接始终优先使用 `PUBLIC_BASE_URL`；未配置时，仅根据后端服务直接接收到的请求协议（是否开启 TLS）生成。生产环境应配置 `PUBLIC_BASE_URL=https://img.example.com`，并且只将应用的 `:8080` 端口暴露给反向代理，由反向代理覆盖上述 `X-Forwarded-*` 头。
 
 ## 功能特性
 

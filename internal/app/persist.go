@@ -8,8 +8,9 @@ import (
 )
 
 var (
-	errTooLarge    = errors.New("file too large")
-	errStorageFull = errors.New("storage capacity exceeded")
+	errTooLarge       = errors.New("file too large")
+	errStorageFull    = errors.New("storage capacity exceeded")
+	errRecordNotFound = errors.New("stored file not found")
 )
 
 // persist writes a fully received object to the store and commits its metadata.
@@ -48,6 +49,30 @@ func (s *service) persist(ctx context.Context, id, sourcePath, contentType strin
 	}
 	delete(s.orphans, created.ObjectKey)
 	return created, false, nil
+}
+
+// deleteRecord removes a committed object and its durable index entry. The
+// caller must be authorized before invoking this method.
+func (s *service) deleteRecord(ctx context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	item, ok := s.records[id]
+	if !ok {
+		return errRecordNotFound
+	}
+	if err := s.store.Delete(ctx, item.ObjectKey); err != nil {
+		return err
+	}
+	delete(s.records, id)
+	delete(s.tusResults, id)
+	if err := s.saveIndexLocked(); err != nil {
+		// The object is already gone. Mark it for normal reconciliation instead
+		// of leaving the in-memory index pointing to a missing object.
+		s.orphans[item.ObjectKey] = item.Size
+		return err
+	}
+	return nil
 }
 
 // reserve earmarks capacity for an in-flight upload so concurrent uploads

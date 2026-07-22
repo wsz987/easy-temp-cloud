@@ -9,6 +9,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="description" content="easy-temp-cloud 极简极速临时文件托管与跨端传输">
   <title>easy-temp-cloud · 临时文件托管网盘</title>
+  <link rel="icon" href="/assets/icons/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/assets/vendor/uppy.min.css">
   <link rel="stylesheet" href="/assets/styles.css">
 </head>
@@ -89,6 +90,17 @@
           <span class="pill" id="pill-types">允许格式 <strong>—</strong></span>
         </div>
 
+        <div class="client-api" id="client-api" hidden>
+          <span class="client-api-label">客户端 API</span>
+          <input class="client-api-url" id="client-api-url" type="text" readonly aria-label="客户端上传 API 地址">
+          <button type="button" class="btn btn-icon" id="copy-api-url-btn" aria-label="复制客户端 API 地址" title="复制客户端 API 地址">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+            </svg>
+          </button>
+        </div>
+
         <div id="uppy"></div>
       </section>
 
@@ -100,7 +112,7 @@
               <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
               <polyline points="22 4 12 14.01 9 11.01"/>
             </svg>
-            <span id="history-title">已被生成的分享链接</span>
+            <span id="history-title">已生成的分享链接</span>
           </div>
           <div class="card-actions">
             <button type="button" class="btn btn-sm btn-primary" id="copy-all-btn">
@@ -128,6 +140,26 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-primary" id="qr-copy-btn">复制链接</button>
         <button type="button" class="btn" id="qr-close-btn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Share Link Modal Dialog -->
+  <div id="delete-link-modal" class="modal-overlay" aria-hidden="true">
+    <div class="modal-card delete-link-modal-card" role="dialog" aria-modal="true" aria-labelledby="delete-link-title" aria-describedby="delete-link-description">
+      <h3 class="modal-title" id="delete-link-title">删除分享链接</h3>
+      <p class="delete-link-description" id="delete-link-description">将从当前浏览器的传输历史中移除此链接。</p>
+      <p class="delete-link-name" id="delete-link-name"></p>
+      <label class="delete-resource-option" for="delete-resource-checkbox">
+        <input type="checkbox" id="delete-resource-checkbox">
+        <span>
+          <strong>同时删除资源文件</strong>
+          <small id="delete-resource-hint">删除后分享链接将立即失效，且无法恢复。</small>
+        </span>
+      </label>
+      <div class="modal-footer">
+        <button type="button" class="btn" id="delete-link-cancel-btn">取消</button>
+        <button type="button" class="btn btn-danger" id="delete-link-confirm-btn">删除</button>
       </div>
     </div>
   </div>

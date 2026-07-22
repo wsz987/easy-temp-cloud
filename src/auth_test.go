@@ -102,6 +102,15 @@ func TestLoginCreatesSessionForProtectedRoutes(t *testing.T) {
 	if configResponse.Code != http.StatusOK {
 		t.Fatalf("authenticated config status = %d", configResponse.Code)
 	}
+	var configPayload struct {
+		APIPassword string `json:"apiPassword"`
+	}
+	if err := json.Unmarshal(configResponse.Body.Bytes(), &configPayload); err != nil {
+		t.Fatal(err)
+	}
+	if configPayload.APIPassword != "short1" {
+		t.Fatalf("apiPassword = %q, want %q", configPayload.APIPassword, "short1")
+	}
 }
 
 func TestLoginRejectsOversizedRequestBody(t *testing.T) {

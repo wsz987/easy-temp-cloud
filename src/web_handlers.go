@@ -53,6 +53,7 @@ func (s *service) clientConfig(w http.ResponseWriter, r *http.Request) {
 		"maxChunkSize": maxChunkSize,
 		"allowedTypes": s.policy.String(),
 		"retention":    formatRetention(s.config.Retention),
+		"apiPassword":  s.config.AuthPassword,
 	})
 }
 
