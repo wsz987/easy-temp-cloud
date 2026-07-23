@@ -7,17 +7,22 @@ import (
 	"time"
 )
 
+const (
+	cleanupInterval  = time.Minute
+	cleanupBatchSize = 100
+)
+
 // cleanup is the externally driven expiry pass: delete objects older than the
-// retention window. Run on startup and on an hourly ticker.
+// retention window. Run on startup and on a minute ticker.
 func (s *service) cleanup(ctx context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.cleanupLocked(ctx, time.Now().Add(-s.config.Retention))
+	return s.cleanupLocked(ctx, time.Now())
 }
 
 // cleanupLocked is the expiry pass plus orphan reaping. Caller must hold s.mu.
-// It saves the index after each expired object so a crash between deletes
-// cannot leave the index pointing at removed files.
+// It removes SQLite metadata after each object deletion so the cache and
+// durable metadata cannot reference a removed object after a successful pass.
 func (s *service) cleanupLocked(ctx context.Context, cutoff time.Time) error {
 	for key := range s.orphans {
 		if err := s.store.Delete(ctx, key); err != nil {
@@ -25,24 +30,24 @@ func (s *service) cleanupLocked(ctx context.Context, cutoff time.Time) error {
 		}
 		delete(s.orphans, key)
 	}
-	for id, item := range s.records {
-		if item.Created.After(cutoff) {
-			continue
-		}
+	items, err := s.metadata.expiredBefore(cutoff, cleanupBatchSize)
+	if err != nil {
+		return fmt.Errorf("find expired metadata: %w", err)
+	}
+	for _, item := range items {
 		if err := s.store.Delete(ctx, item.ObjectKey); err != nil {
-			return fmt.Errorf("delete expired object %s: %w", id, err)
+			return fmt.Errorf("delete expired object %s: %w", item.ID, err)
 		}
-		delete(s.records, id)
-		if err := s.saveIndexLocked(); err != nil {
+		if err := s.removeRecordLocked(item); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// cleanupLoop runs the expiry pass on an hourly ticker until ctx is cancelled.
+// cleanupLoop runs the expiry pass on a minute ticker until ctx is cancelled.
 func (s *service) cleanupLoop(ctx context.Context) {
-	ticker := time.NewTicker(time.Hour)
+	ticker := time.NewTicker(cleanupInterval)
 	defer ticker.Stop()
 	for {
 		select {

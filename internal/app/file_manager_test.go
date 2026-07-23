@@ -32,6 +32,7 @@ func newTestService(t *testing.T) (*service, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = svc.close() })
 	writeObject := func(id, content string) string {
 		path := filepath.Join(dir, "objects", id)
 		if err := os.WriteFile(path, []byte(content), 0600); err != nil {

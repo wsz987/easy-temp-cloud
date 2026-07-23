@@ -20,7 +20,7 @@ var (
 func (s *service) persist(ctx context.Context, id, sourcePath, contentType, filename string, size, reservation int64) (record, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.cleanupLocked(ctx, time.Now().Add(-s.config.Retention)); err != nil {
+	if err := s.cleanupLocked(ctx, time.Now()); err != nil {
 		return record{}, false, err
 	}
 	if existing, ok := s.records[id]; ok {
@@ -39,9 +39,7 @@ func (s *service) persist(ctx context.Context, id, sourcePath, contentType, file
 	if err := s.store.Put(ctx, created.ObjectKey, sourcePath, contentType); err != nil {
 		return record{}, false, err
 	}
-	s.records[id] = created
-	if err := s.saveIndexLocked(); err != nil {
-		delete(s.records, id)
+	if err := s.insertRecordLocked(created); err != nil {
 		if deleteErr := s.store.Delete(ctx, created.ObjectKey); deleteErr != nil {
 			log.Printf("rollback object %s: %v", id, deleteErr)
 			s.orphans[created.ObjectKey] = created.Size
@@ -65,14 +63,26 @@ func (s *service) deleteRecord(ctx context.Context, id string) error {
 	if err := s.store.Delete(ctx, item.ObjectKey); err != nil {
 		return err
 	}
-	delete(s.records, id)
-	delete(s.tusResults, id)
-	if err := s.saveIndexLocked(); err != nil {
-		// The object is already gone. Mark it for normal reconciliation instead
-		// of leaving the in-memory index pointing to a missing object.
-		s.orphans[item.ObjectKey] = item.Size
+	if err := s.removeRecordLocked(item); err != nil {
 		return err
 	}
+	return nil
+}
+
+func (s *service) insertRecordLocked(item record) error {
+	if err := s.metadata.insert(item); err != nil {
+		return err
+	}
+	s.records[item.ID] = item
+	return nil
+}
+
+func (s *service) removeRecordLocked(item record) error {
+	if err := s.metadata.delete(item.ID); err != nil {
+		return err
+	}
+	delete(s.records, item.ID)
+	delete(s.tusResults, item.ID)
 	return nil
 }
 
@@ -81,7 +91,7 @@ func (s *service) deleteRecord(ctx context.Context, id string) error {
 func (s *service) reserve(ctx context.Context, bytes int64) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if err := s.cleanupLocked(ctx, time.Now().Add(-s.config.Retention)); err != nil {
+	if err := s.cleanupLocked(ctx, time.Now()); err != nil {
 		return err
 	}
 	if bytes <= 0 || bytes > s.config.MaxStorageBytes || s.usedBytesLocked() > s.config.MaxStorageBytes-s.reservedBytes-bytes {

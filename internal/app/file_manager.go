@@ -136,17 +136,13 @@ func (s *service) batchDelete(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"removed": removed})
 }
 
-// deleteRecords removes multiple committed objects and commits the index once
-// at the end. It is the batch counterpart of deleteRecord.
+// deleteRecords removes multiple committed objects and their metadata. It is
+// the batch counterpart of deleteRecord.
 func (s *service) deleteRecords(ctx context.Context, ids []string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	removed := 0
-	// Track objects deleted in this batch so that, if the final index commit
-	// fails, we can mark them as orphans for the next reconcile pass instead of
-	// leaving a stale index.json pointing at missing objects.
-	deleted := make(map[string]int64)
 	for _, id := range ids {
 		if !sha256Pattern.MatchString(id) {
 			continue
@@ -156,38 +152,14 @@ func (s *service) deleteRecords(ctx context.Context, ids []string) (int, error) 
 			continue
 		}
 		if err := s.store.Delete(ctx, item.ObjectKey); err != nil {
-			// Objects already deleted in this batch are at risk: the on-disk
-			// index still lists them. Mark them as orphans before bailing out
-			// so the next reconcile/cleanup reaps both the objects and entries.
-			if removed > 0 {
-				s.markOrphansLocked(deleted)
-			}
 			return removed, err
 		}
-		delete(s.records, id)
-		delete(s.tusResults, id)
-		deleted[item.ObjectKey] = item.Size
+		if err := s.removeRecordLocked(item); err != nil {
+			return removed, err
+		}
 		removed++
 	}
-	if removed == 0 {
-		return 0, nil
-	}
-	if err := s.saveIndexLocked(); err != nil {
-		// The objects are gone but index.json may still reference them. Hand
-		// the batch to the orphan ledger so cleanup/reconcile finishes the job.
-		s.markOrphansLocked(deleted)
-		return removed, err
-	}
 	return removed, nil
-}
-
-// markOrphansLocked records objects whose bytes were deleted but whose index
-// entry could not be committed. The next reconcile pass drops the stale record
-// and the next cleanup deletes any leftover bytes. Caller must hold s.mu.
-func (s *service) markOrphansLocked(deleted map[string]int64) {
-	for key, size := range deleted {
-		s.orphans[key] = size
-	}
 }
 
 // archiveFiles streams a zip archive of the requested objects. For local
@@ -314,4 +286,3 @@ func parseArchiveIDs(raw string) ([]string, error) {
 	}
 	return ids, nil
 }
-

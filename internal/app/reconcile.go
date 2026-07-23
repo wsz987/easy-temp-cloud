@@ -32,18 +32,18 @@ func (s *service) reconcile(_ context.Context) error {
 		}
 	}
 
-	changed := false
 	switch store := s.store.(type) {
 	case localStore:
 		entries, err := os.ReadDir(store.root)
 		if err != nil {
 			return err
 		}
-		for id, item := range s.records {
+		for _, item := range s.records {
 			path, err := store.path(item.ObjectKey)
 			if err != nil || !config.FileExists(path) {
-				delete(s.records, id)
-				changed = true
+				if err := s.removeRecordLocked(item); err != nil {
+					return err
+				}
 			}
 		}
 		for _, entry := range entries {
@@ -76,7 +76,7 @@ func (s *service) reconcile(_ context.Context) error {
 		for _, item := range s.records {
 			indexedObjects[item.ObjectKey] = struct{}{}
 		}
-		for id, item := range s.records {
+		for _, item := range s.records {
 			_, exists := objects[item.ObjectKey]
 			if !exists && !strings.HasPrefix(item.ObjectKey, ossObjectPrefix) {
 				var err error
@@ -86,8 +86,9 @@ func (s *service) reconcile(_ context.Context) error {
 				}
 			}
 			if !exists {
-				delete(s.records, id)
-				changed = true
+				if err := s.removeRecordLocked(item); err != nil {
+					return err
+				}
 			}
 		}
 		for key := range objects {
@@ -97,9 +98,6 @@ func (s *service) reconcile(_ context.Context) error {
 				}
 			}
 		}
-	}
-	if changed {
-		return s.saveIndexLocked()
 	}
 	return nil
 }

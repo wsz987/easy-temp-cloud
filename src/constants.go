@@ -1,3 +1,5 @@
+//go:build ignore
+
 package main
 
 // Hard limits shared by single-shot and chunked uploads.

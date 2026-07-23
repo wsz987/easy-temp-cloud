@@ -25,6 +25,7 @@ func TestDeleteFileRequiresSessionAndRemovesObject(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = svc.close() })
 
 	id := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	objectPath := filepath.Join(directory, "objects", id)
