@@ -33,14 +33,18 @@
    docker compose logs -f
    ```
 
-5. 网页上传入口为 `http://你的服务器地址:8080/`，需输入 `AUTH_PASSWORD` 登录。客户端上传地址如下，`pwd` 替换为你设置的 `AUTH_PASSWORD`：
+5. 网页上传入口为 `http://你的服务器地址:8080/`，需输入 `AUTH_PASSWORD` 登录。客户端先用密码换取 token，再将 token 放入 `Authorization: Bearer` 请求头：
 
-   ```text
-   # 客户端与服务不在同一台机器
-   http://你的服务器地址:8080/api/upload?pwd=你的AUTH_PASSWORD
+   ```bash
+   # 取得 7 天有效的 token
+   curl -X POST http://你的服务器地址:8080/api/auth/token \
+     -H 'Content-Type: application/x-www-form-urlencoded' \
+     --data-urlencode 'password=你的AUTH_PASSWORD'
 
-   # 客户端与服务在同一台机器
-   http://localhost:8080/api/upload?pwd=你的AUTH_PASSWORD
+   # 使用响应中的 token 上传文件
+   curl -F 'file=@picture.png' \
+     -H 'Authorization: Bearer <token>' \
+     http://你的服务器地址:8080/api/upload
    ```
 
    网页大文件上传使用标准 tus 端点 `/api/uploads/`。
@@ -111,7 +115,7 @@ location / {
 | `OSS_ACCESS_KEY_ID` | - | OSS AccessKey ID。 |
 | `OSS_ACCESS_KEY_SECRET` | - | OSS AccessKey Secret。 |
 
-服务每次启动都会生成新的内存签名密钥，因此浏览器登录状态和本地存储的文件分享链接都会失效；重启后重新登录或重新上传即可获得新链接。
+登录 token 有效期为 7 天，服务重启后仍然有效；更改 `AUTH_PASSWORD` 会使所有已签发 token 失效。文件分享链接仍会在服务重启后失效。
 
 > ⚠️ `.env` 包含敏感信息，切勿提交到版本库（已在 `.gitignore` 中忽略）。
 
@@ -146,17 +150,20 @@ ALLOWED_TYPES=all
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
-| `POST` | `/api/upload?pwd={AUTH_PASSWORD}` | 上传文件，表单字段名为 `file`，返回 `{"url","created"}`。 |
-| `POST/PATCH/HEAD/DELETE` | `/api/uploads/` | 标准 tus 可恢复上传端点，仅限已登录网页会话。 |
+| `POST` | `/api/auth/token` | 以表单字段 `password` 换取 7 天有效的 JWT。 |
+| `POST` | `/api/upload` | 上传文件，表单字段名为 `file`，需 `Authorization: Bearer <token>`，返回 `{"url","created"}`。 |
+| `POST/PATCH/HEAD/DELETE` | `/api/uploads/` | 标准 tus 可恢复上传端点，需 `Authorization: Bearer <token>`。 |
 | `GET` | `/files/{sha256}?key={file-key}` | 读取本地存储的文件；上传响应会返回完整链接。 |
 | `GET` | `/healthz` | 健康检查，返回 `204 No Content`，可用作容器探针。 |
 
-`pwd` 是兼容命令行客户端的 URL 口令。它可能出现在代理日志、浏览器历史和命令历史中，因此仅应在可信网络中使用；网页上传使用登录会话，不会将密码放进 tus URL。
+除健康检查、静态资源和文件分享链接外，所有 API 都要求 `Authorization: Bearer <token>`。不要把 token 放入 URL；它是 bearer 凭据，泄露后可在过期前以你的身份操作文件。
 
 ### 上传示例
 
 ```bash
-curl -F "file=@picture.png" "http://localhost:8080/api/upload?pwd=eztCloud@"
+curl -F "file=@picture.png" \
+  -H "Authorization: Bearer <token>" \
+  http://localhost:8080/api/upload
 ```
 
 成功响应：
@@ -172,7 +179,7 @@ curl -F "file=@picture.png" "http://localhost:8080/api/upload?pwd=eztCloud@"
 - 文件过大返回 `413 Request Entity Too Large`。
 - 容量已满返回 `507 Insufficient Storage`。
 - 内容类型不在 `ALLOWED_TYPES` 白名单时返回 `400 Bad Request`。
-- 未携带正确 `pwd` 时返回 `401 Unauthorized`；同一客户端连续错误尝试过多时返回 `429 Too Many Requests`。
+- 未携带有效 bearer token 时返回 `401 Unauthorized`；同一客户端连续错误登录过多时返回 `429 Too Many Requests`。
 - 返回的本地文件链接是仅对该文件有效的 bearer 链接；它不具备上传或访问其他文件的权限。请像密码一样妥善保存。
 - 文件始终以附件形式下载，不会在本服务的同源页面中直接渲染。
 
@@ -214,6 +221,17 @@ air
 ```
 
 Air 使用仓库根目录的 `.air.toml`，应用监听 `http://localhost:8080`，浏览器应通过支持自动刷新的代理入口 `http://localhost:8081` 访问。开发二进制写入并在退出时清理 `tmp/`。Docker Compose 仍用于生产部署，不受该配置影响。
+
+### 网页依赖构建
+
+网页上传组件使用按需构建的 Uppy 包：桌面端加载 Core、Dashboard 和 Tus，移动端的 Webcam 模块按需加载。构建依赖使用国内 npm 镜像 `registry.npmmirror.com`，最终产物保存在 `src/web/vendor/uppy/` 并嵌入 Go 二进制，运行时不依赖公共 CDN。
+
+升级 Uppy 或修改 `src/web/vendor-src/uppy/` 后执行：
+
+```bash
+npm ci
+npm run build:web
+```
 
 ### Docker 单独运行
 

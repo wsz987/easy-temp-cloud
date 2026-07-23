@@ -16,6 +16,7 @@ func TestDeleteFileRequiresSessionAndRemovesObject(t *testing.T) {
 	directory := t.TempDir()
 	svc, err := NewService(config.Config{
 		DataDir:         directory,
+		AuthPassword:    "test-password",
 		MaxUploadBytes:  1024,
 		MaxStorageBytes: 1024,
 		Retention:       time.Hour,
@@ -41,7 +42,7 @@ func TestDeleteFileRequiresSessionAndRemovesObject(t *testing.T) {
 	}
 
 	request = httptest.NewRequest(http.MethodDelete, "/api/files/"+id, nil)
-	request.AddCookie(svc.auth.NewSessionCookie(time.Now()))
+	addBearer(t, router, svc.config.AuthPassword, request)
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusNoContent {
@@ -55,7 +56,7 @@ func TestDeleteFileRequiresSessionAndRemovesObject(t *testing.T) {
 	}
 
 	request = httptest.NewRequest(http.MethodDelete, "/api/files/"+id, nil)
-	request.AddCookie(svc.auth.NewSessionCookie(time.Now()))
+	addBearer(t, router, svc.config.AuthPassword, request)
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
 	if response.Code != http.StatusNotFound {

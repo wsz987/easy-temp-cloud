@@ -4,16 +4,17 @@ import (
 	"errors"
 	"mime"
 	"net/http"
+	"strings"
 	"time"
 
 	"easy-temp-cloud/internal/auth"
 )
 
-// requireSession guards a handler behind a valid browser session.
-func (s *service) requireSession(next http.Handler) http.Handler {
+// requireBearer guards a handler behind a valid Authorization Bearer token.
+func (s *service) requireBearer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(auth.CookieName)
-		if err != nil || !s.auth.ValidSession(cookie.Value, time.Now()) {
+		scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+		if !ok || !strings.EqualFold(scheme, "Bearer") || token == "" || strings.ContainsAny(token, " \t") || !s.auth.ValidToken(token, time.Now()) {
 			writeError(w, http.StatusUnauthorized, "authentication required")
 			return
 		}
@@ -21,34 +22,13 @@ func (s *service) requireSession(next http.Handler) http.Handler {
 	})
 }
 
-// requirePasswordQuery guards a handler behind a ?pwd= password query parameter
-// and rate-limits failures per client IP.
-func (s *service) requirePasswordQuery(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		client := auth.ClientAddress(r)
-		now := time.Now()
-		if !s.auth.AllowAttempt(client, now) {
-			writeError(w, http.StatusTooManyRequests, "too many failed authentication attempts")
-			return
-		}
-		if !s.auth.ValidPassword(r.URL.Query().Get("pwd")) {
-			if s.auth.FailedAttempt(client, now) {
-				writeError(w, http.StatusTooManyRequests, "too many failed authentication attempts")
-				return
-			}
-			writeError(w, http.StatusUnauthorized, "authentication required")
-			return
-		}
-		s.auth.ClearAttempts(client)
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (s *service) login(w http.ResponseWriter, r *http.Request) {
+// issueToken validates a form password, rate-limits failures by client IP, and
+// returns a seven-day Bearer token on success.
+func (s *service) issueToken(w http.ResponseWriter, r *http.Request) {
 	client := auth.ClientAddress(r)
 	now := time.Now()
 	if !s.auth.AllowAttempt(client, now) {
-		s.loginPage(w, http.StatusTooManyRequests, "登录尝试过于频繁，请 5 分钟后再试。")
+		writeError(w, http.StatusTooManyRequests, "too many failed authentication attempts")
 		return
 	}
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -67,18 +47,17 @@ func (s *service) login(w http.ResponseWriter, r *http.Request) {
 	}
 	if !s.auth.ValidPassword(r.PostForm.Get("password")) {
 		if s.auth.FailedAttempt(client, now) {
-			s.loginPage(w, http.StatusTooManyRequests, "登录尝试过于频繁，请 5 分钟后再试。")
+			writeError(w, http.StatusTooManyRequests, "too many failed authentication attempts")
 			return
 		}
-		s.loginPage(w, http.StatusUnauthorized, "密码不正确，请重试。")
+		writeError(w, http.StatusUnauthorized, "authentication required")
 		return
 	}
 	s.auth.ClearAttempts(client)
-	http.SetCookie(w, s.auth.NewSessionCookie(now))
-	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-func (s *service) logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: auth.CookieName, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode})
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	token, expiresAt, err := s.auth.NewToken(now)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "issue authentication token")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"token": token, "expiresAt": expiresAt})
 }

@@ -1,8 +1,5 @@
-// Package auth holds process-local authentication state: password checking,
-// session-cookie signing, and per-client failure rate limiting.
-//
-// Its signing key is generated on each startup, intentionally invalidating
-// sessions and file links on restart.
+// Package auth holds password checking, JWT issuance and validation, file-link
+// signing, and per-client failed-login rate limiting.
 package auth
 
 import (
@@ -13,15 +10,14 @@ import (
 	"encoding/hex"
 	"net"
 	"net/http"
-	"strconv"
-	"strings"
 	"sync"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
-	CookieName    = "et_session"
-	SessionTTL    = 7 * 24 * time.Hour
+	TokenTTL      = 7 * 24 * time.Hour
 	MaxFailures   = 5
 	FailureWindow = 5 * time.Minute
 	MaxClients    = 1024
@@ -33,18 +29,22 @@ type failure struct {
 	attempts int
 }
 
-// Auth holds process-local authentication state. Its signing key is generated
-// on each startup, intentionally invalidating sessions and file links on restart.
+// Auth holds password-derived JWT signing material plus process-local state.
 type Auth struct {
 	passwordHash [sha256.Size]byte
-	signingKey   [32]byte
+	jwtKey       [sha256.Size]byte
+	signingKey   [sha256.Size]byte
 	mu           sync.Mutex
 	failures     map[string]failure
 }
 
 // New creates authentication state for the configured password.
 func New(password string) (*Auth, error) {
-	a := &Auth{passwordHash: sha256.Sum256([]byte(password)), failures: map[string]failure{}}
+	a := &Auth{
+		passwordHash: sha256.Sum256([]byte(password)),
+		jwtKey:       sha256.Sum256([]byte("easy-temp-cloud/jwt/v1:" + password)),
+		failures:     map[string]failure{},
+	}
 	if _, err := ReadRand(a.signingKey[:]); err != nil {
 		return nil, err
 	}
@@ -64,29 +64,31 @@ func (a *Auth) ValidPassword(password string) bool {
 	return subtle.ConstantTimeCompare(candidate[:], a.passwordHash[:]) == 1
 }
 
-// NewSessionCookie builds the session cookie for the given instant.
-func (a *Auth) NewSessionCookie(now time.Time) *http.Cookie {
-	expires := now.Add(SessionTTL)
-	payload := strconv.FormatInt(expires.Unix(), 10)
-	return &http.Cookie{
-		Name:     CookieName,
-		Value:    payload + "." + a.signature("session:"+payload),
-		Path:     "/",
-		Expires:  expires,
-		MaxAge:   int(SessionTTL.Seconds()),
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
+// NewToken signs a seven-day HS256 JWT. Its signing key is derived from the
+// configured password, so a restart preserves valid tokens while a password
+// change invalidates every existing token.
+func (a *Auth) NewToken(now time.Time) (string, time.Time, error) {
+	expires := now.Add(TokenTTL).UTC()
+	claims := jwt.RegisteredClaims{
+		Subject:   "authenticated",
+		IssuedAt:  jwt.NewNumericDate(now.UTC()),
+		ExpiresAt: jwt.NewNumericDate(expires),
 	}
+	token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(a.jwtKey[:])
+	return token, expires, err
 }
 
-// ValidSession reports whether the cookie value is a currently-valid session.
-func (a *Auth) ValidSession(value string, now time.Time) bool {
-	payload, signature, ok := strings.Cut(value, ".")
-	if !ok || !hmac.Equal([]byte(signature), []byte(a.signature("session:"+payload))) {
-		return false
-	}
-	expires, err := strconv.ParseInt(payload, 10, 64)
-	return err == nil && now.Before(time.Unix(expires, 0))
+// ValidToken reports whether value is an unexpired token signed with the
+// configured password-derived key.
+func (a *Auth) ValidToken(value string, now time.Time) bool {
+	claims := &jwt.RegisteredClaims{}
+	token, err := jwt.ParseWithClaims(value, claims, func(token *jwt.Token) (any, error) {
+		if token.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return a.jwtKey[:], nil
+	}, jwt.WithTimeFunc(func() time.Time { return now }))
+	return err == nil && token.Valid && claims.Subject == "authenticated" && claims.ExpiresAt != nil
 }
 
 // FileKey returns the share-link key for a file id.

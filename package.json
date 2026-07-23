@@ -1,0 +1,17 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "test:web": "node --test src/web/*.test.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  },
+  "dependencies": {
+    "@uppy/core": "5.2.0",
+    "@uppy/dashboard": "5.1.1",
+    "@uppy/tus": "5.1.1",
+    "@uppy/webcam": "5.1.0"
+  }
+}

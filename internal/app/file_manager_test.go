@@ -23,6 +23,7 @@ func newTestService(t *testing.T) (*service, string, string) {
 	dir := t.TempDir()
 	svc, err := NewService(config.Config{
 		DataDir:         dir,
+		AuthPassword:    "test-password",
 		MaxUploadBytes:  1024,
 		MaxStorageBytes: 1024,
 		Retention:       time.Hour,
@@ -44,7 +45,7 @@ func newTestService(t *testing.T) (*service, string, string) {
 	return svc, idA, idB
 }
 
-func TestListFilesRequiresSession(t *testing.T) {
+func TestListFilesRequiresBearerToken(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	router := NewRouter(svc)
 	req := httptest.NewRequest(http.MethodGet, "/api/files", nil)
@@ -60,7 +61,7 @@ func TestListFilesReturnsServerFiles(t *testing.T) {
 	router := NewRouter(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/files", nil)
-	req.AddCookie(svc.auth.NewSessionCookie(time.Now()))
+	addBearer(t, router, svc.config.AuthPassword, req)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -107,7 +108,7 @@ func TestBatchDeleteRemovesMultiple(t *testing.T) {
 	body := bytes.NewBufferString(`{"ids":["` + idA + `","` + idB + `"]}`)
 	req := httptest.NewRequest(http.MethodPost, "/api/files/delete", body)
 	req.Header.Set("Content-Type", "application/json")
-	req.AddCookie(svc.auth.NewSessionCookie(time.Now()))
+	addBearer(t, router, svc.config.AuthPassword, req)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
@@ -138,7 +139,7 @@ func TestBatchDeleteRejectsEmptyBody(t *testing.T) {
 	svc, _, _ := newTestService(t)
 	router := NewRouter(svc)
 	req := httptest.NewRequest(http.MethodPost, "/api/files/delete", bytes.NewBufferString(`{}`))
-	req.AddCookie(svc.auth.NewSessionCookie(time.Now()))
+	addBearer(t, router, svc.config.AuthPassword, req)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
@@ -151,7 +152,7 @@ func TestArchiveStreamsZip(t *testing.T) {
 	router := NewRouter(svc)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/files/archive?ids="+idA+","+idB, nil)
-	req.AddCookie(svc.auth.NewSessionCookie(time.Now()))
+	addBearer(t, router, svc.config.AuthPassword, req)
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 

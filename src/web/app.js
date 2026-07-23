@@ -1,7 +1,7 @@
 // app.js
 // Modernized Client logic for easy-temp-cloud with enhanced PC & Mobile (iOS/Android) interaction.
 
-import { Uppy, Dashboard, Tus, Webcam } from './vendor/uppy.min.mjs'
+import { Uppy, Dashboard, Tus } from './vendor/uppy/core.js'
 import { detectMobilePlatform, isMobilePlatform, uploadNoteForPlatform } from './platform.mjs'
 import { generateQRCodeSVG } from './qrcode.mjs'
 
@@ -10,6 +10,7 @@ const isMobile = isMobilePlatform()
 const isIOS = mobilePlatform === 'ios'
 const isAndroid = mobilePlatform === 'android'
 const STORAGE_KEY = 'easy-temp-cloud:history'
+const AUTH_TOKEN_STORAGE_KEY = 'easy-temp-cloud:auth-token'
 const MAX_HISTORY = 50
 const MAX_THUMBNAIL_DATA_URL_LENGTH = 48 * 1024
 let activeDeleteItem = null
@@ -20,6 +21,10 @@ init().catch((err) => {
 })
 
 async function init() {
+  if (!authToken()) {
+    window.location.replace('/login')
+    return
+  }
   const config = await fetchConfig()
   renderMeta(config)
   setupTabs()
@@ -53,13 +58,7 @@ async function init() {
   })
 
   if (isMobile) {
-    uppy.use(Webcam, {
-      target: Dashboard,
-      modes: ['picture', 'video-audio'],
-      mobileNativeCamera: isIOS || isAndroid || isMobile,
-      showRecordingLength: true,
-      mirror: true,
-    })
+    await installWebcam(uppy)
   }
 
   uppy.use(Tus, {
@@ -69,6 +68,7 @@ async function init() {
     retryDelays: [0, 1000, 3000, 8000],
     storeFingerprintForResuming: true,
     removeFingerprintOnSuccess: true,
+    headers: authHeaders(),
   })
 
   uppy.on('complete', async (result) => {
@@ -218,7 +218,11 @@ function setupClipboardPaste(uppy) {
 
 async function fetchConfig() {
   try {
-    const res = await fetch('/api/config')
+    const res = await fetch('/api/config', { headers: authHeaders() })
+    if (res.status === 401) {
+      clearAuthAndRedirect()
+      return null
+    }
     if (res.ok) return await res.json()
   } catch (e) {
     // fallback
@@ -240,22 +244,46 @@ function renderMeta(cfg) {
   set('pill-chunk', iconPill('分片大小', formatBytes(cfg.chunkSize)))
   set('pill-retention', iconPill('保留时间', formatRetention(cfg.retention || '1d')))
   set('pill-types', iconPill('允许格式', cfg.allowedTypes || '全部格式'))
-  renderClientAPI(cfg.apiPassword)
 }
 
-function renderClientAPI(password) {
-  const row = document.getElementById('client-api')
-  const input = document.getElementById('client-api-url')
-  if (!row || !input) return
+async function installWebcam(uppy) {
+  const [{ Webcam }] = await Promise.all([
+    import('./vendor/uppy/webcam.js'),
+    loadStylesheet('/assets/vendor/uppy/webcam.css'),
+  ])
+  uppy.use(Webcam, {
+    target: Dashboard,
+    modes: ['picture', 'video-audio'],
+    mobileNativeCamera: isIOS || isAndroid || isMobile,
+    showRecordingLength: true,
+    mirror: true,
+  })
+}
 
-  if (typeof password !== 'string' || !password) {
-    row.hidden = true
-    input.value = ''
-    return
-  }
+function loadStylesheet(href) {
+  if (document.querySelector(`link[href="${href}"]`)) return Promise.resolve()
+  return new Promise((resolve, reject) => {
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = href
+    link.onload = resolve
+    link.onerror = () => reject(new Error(`load stylesheet: ${href}`))
+    document.head.appendChild(link)
+  })
+}
 
-  input.value = `${window.location.origin}/api/upload?pwd=${encodeURIComponent(password)}`
-  row.hidden = false
+function authToken() {
+  return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || ''
+}
+
+function authHeaders(headers = {}) {
+  const token = authToken()
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers
+}
+
+function clearAuthAndRedirect() {
+  localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY)
+  window.location.replace('/login')
 }
 
 function iconPill(label, value) {
@@ -583,7 +611,7 @@ async function confirmDeleteLink() {
     if (deleteResource) {
       const response = await fetch(`/api/files/${encodeURIComponent(resourceID)}`, {
         method: 'DELETE',
-        credentials: 'same-origin',
+        headers: authHeaders(),
       })
       if (!response.ok && response.status !== 404) {
         const body = await response.json().catch(() => ({}))
@@ -912,7 +940,7 @@ async function resolvePublicURL(file) {
   const uploadURL = (file.response && file.response.uploadURL) || file.uploadURL
   if (!uploadURL) return null
   try {
-    const response = await fetch(`${uploadURL.replace(/\/$/, '')}/result`)
+    const response = await fetch(`${uploadURL.replace(/\/$/, '')}/result`, { headers: authHeaders() })
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const result = await response.json()
     return result.url ? { url: result.url, id: result.id || '' } : null
@@ -1041,10 +1069,9 @@ async function refreshFileManager(force = false) {
   if (fileManager.loaded && !force) return
   fileManager.loading = true
   try {
-    const res = await fetch('/api/files', { credentials: 'same-origin' })
+    const res = await fetch('/api/files', { headers: authHeaders() })
     if (res.status === 401) {
-      // Session expired; let the user re-login from the top of the page.
-      window.location.reload()
+      clearAuthAndRedirect()
       return
     }
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -1454,12 +1481,25 @@ function updateManageToolbar() {
   }
 }
 
-function downloadSelected() {
+async function downloadSelected() {
   const ids = [...fileManager.selected]
   if (!ids.length) return
   const url = `/api/files/archive?ids=${ids.map(encodeURIComponent).join(',')}`
-  triggerDownload(url)
-  showToast(`正在打包下载 ${ids.length} 个文件…`, 'info')
+  try {
+    const response = await fetch(url, { headers: authHeaders() })
+    if (response.status === 401) {
+      clearAuthAndRedirect()
+      return
+    }
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const objectURL = URL.createObjectURL(await response.blob())
+    triggerDownload(objectURL)
+    setTimeout(() => URL.revokeObjectURL(objectURL), 1000)
+    showToast(`正在打包下载 ${ids.length} 个文件…`, 'info')
+  } catch (error) {
+    console.error('Archive download failed', error)
+    showToast(`打包下载失败：${error.message}`, 'error')
+  }
 }
 
 function triggerDownload(url) {
@@ -1547,8 +1587,7 @@ async function performDeleteFiles(ids) {
   try {
     const res = await fetch('/api/files/delete', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      credentials: 'same-origin',
+      headers: authHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ ids }),
     })
     if (!res.ok) {

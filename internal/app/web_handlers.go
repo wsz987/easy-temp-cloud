@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"time"
 
-	"easy-temp-cloud/internal/auth"
 	"easy-temp-cloud/internal/config"
 )
 
@@ -21,12 +20,11 @@ var webFS fs.FS
 func SetWebFS(fsys fs.FS) { webFS = fsys }
 
 func (s *service) home(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(auth.CookieName)
-	if err != nil || !s.auth.ValidSession(cookie.Value, time.Now()) {
-		s.loginPage(w, http.StatusOK, "")
-		return
-	}
 	s.index(w, r)
+}
+
+func (s *service) loginPageHandler(w http.ResponseWriter, _ *http.Request) {
+	s.loginPage(w, http.StatusOK, "")
 }
 
 func (s *service) loginPage(w http.ResponseWriter, status int, message string) {
@@ -62,7 +60,6 @@ func (s *service) clientConfig(w http.ResponseWriter, r *http.Request) {
 		"maxChunkSize": config.MaxChunkSize,
 		"allowedTypes": s.policy.String(),
 		"retention":    formatRetention(s.config.Retention),
-		"apiPassword":  s.config.AuthPassword,
 	})
 }
 

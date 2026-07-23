@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -67,7 +68,7 @@ func TestLoginStylesHideInactivePasswordIcon(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(styles), ".password-toggle [hidden] { display: none !important; }") {
+	if !regexp.MustCompile(`(?s)\.password-toggle \[hidden\]\s*\{\s*display:\s*none !important;\s*\}`).Match(styles) {
 		t.Fatal("login styles do not hide the inactive password icon")
 	}
 }

@@ -22,6 +22,7 @@ image-host.exe
 # ===== Go 工具链 =====
 # 依赖目录(本项目使用 go mod,不提交 vendor)
 /vendor/
+/node_modules/
 
 # ===== IDE / 编辑器 =====
 .idea/
