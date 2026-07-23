@@ -117,6 +117,7 @@ async function init() {
   setupFullWindowDrag(uppy)
   setupClipboardPaste(uppy)
   setupGlobalActions()
+  setupFileManager()
 
   window.uppy = uppy
 }
@@ -285,9 +286,6 @@ function setupTabs() {
 
 function switchTab(tabName) {
   const tabs = document.querySelectorAll('.tab-btn')
-  const uploadSection = document.getElementById('upload-section')
-  const historySection = document.getElementById('history-section')
-
   tabs.forEach((t) => {
     if (t.getAttribute('data-tab') === tabName) {
       t.classList.add('is-active')
@@ -296,12 +294,17 @@ function switchTab(tabName) {
     }
   })
 
-  if (tabName === 'upload') {
-    uploadSection.hidden = false
-    historySection.hidden = true
-  } else {
-    uploadSection.hidden = true
-    historySection.hidden = false
+  // Show the matching section, hide the others.
+  const main = document.querySelector('.app-main')
+  main.querySelectorAll('section.card').forEach((section) => {
+    const id = section.id || ''
+    const name = id.replace(/-section$/, '')
+    section.hidden = name !== tabName
+  })
+
+  // Lazy-load the file manager list the first time the tab is opened.
+  if (tabName === 'manage') {
+    refreshFileManager()
   }
 }
 
@@ -441,14 +444,35 @@ function setupGlobalActions() {
     if (apiURL) copyToClipboard(apiURL)
   })
 
-  // Clear History
-  document.getElementById('clear-history-btn')?.addEventListener('click', () => {
-    if (confirm('确定要清空全部上传历史记录吗？')) {
-      localStorage.removeItem(STORAGE_KEY)
-      updateHistoryBadge()
-      renderLinks([])
-      showToast('历史记录已清空', 'info')
-    }
+  // Clear History Modal
+  const clearModal = document.getElementById('clear-history-modal')
+  const clearBtn = document.getElementById('clear-history-btn')
+  const clearCancelBtn = document.getElementById('clear-history-cancel-btn')
+  const clearConfirmBtn = document.getElementById('clear-history-confirm-btn')
+
+  function showClearHistoryModal() {
+    if (!clearModal) return
+    clearModal.classList.add('is-active')
+    clearModal.setAttribute('aria-hidden', 'false')
+  }
+
+  function hideClearHistoryModal() {
+    if (!clearModal) return
+    clearModal.classList.remove('is-active')
+    clearModal.setAttribute('aria-hidden', 'true')
+  }
+
+  clearBtn?.addEventListener('click', showClearHistoryModal)
+  clearCancelBtn?.addEventListener('click', hideClearHistoryModal)
+  clearModal?.addEventListener('click', (e) => {
+    if (e.target === clearModal) hideClearHistoryModal()
+  })
+  clearConfirmBtn?.addEventListener('click', () => {
+    localStorage.removeItem(STORAGE_KEY)
+    updateHistoryBadge()
+    renderLinks([])
+    hideClearHistoryModal()
+    showToast('历史记录已清空', 'info')
   })
 
   // Copy All Links
@@ -471,10 +495,6 @@ function setupGlobalActions() {
   closeBtn?.addEventListener('click', hideQRModal)
   modal?.addEventListener('click', (e) => {
     if (e.target === modal) hideQRModal()
-  })
-
-  window.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') hideQRModal()
   })
 
   copyBtn?.addEventListener('click', () => {
@@ -838,6 +858,8 @@ function svgIcon(name) {
       return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>`
     case 'trash':
       return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`
+    case 'download':
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`
     default:
       return ''
   }
@@ -909,6 +931,726 @@ function formatTimeAgo(ts) {
   if (hours < 24) return `${hours} 小时前`
   const days = Math.floor(hours / 24)
   return `${days} 天前`
+}
+
+// ---- File Manager: server file list, multi-select, lasso, batch ops --------
+
+// ---- File Manager: server file list, search, sort, multi-select, batch ops ----
+
+let activeDeleteFileIds = []
+
+const fileManager = {
+  files: [],
+  selected: new Set(),
+  lastAnchor: null,
+  loading: false,
+  loaded: false,
+  searchQuery: '',
+  sortBy: 'created-desc',
+  viewMode: 'grid',
+  lastData: null,
+}
+
+function setupFileManager() {
+  const grid = document.getElementById('file-grid')
+  if (!grid) return
+
+  document.getElementById('manage-refresh-btn')?.addEventListener('click', () => refreshFileManager(true))
+  document.getElementById('manage-select-all-btn')?.addEventListener('click', toggleSelectAll)
+  document.getElementById('manage-download-btn')?.addEventListener('click', downloadSelected)
+  document.getElementById('manage-delete-btn')?.addEventListener('click', deleteSelected)
+
+  // View Mode Switcher
+  const gridBtn = document.getElementById('view-grid-btn')
+  const listBtn = document.getElementById('view-list-btn')
+
+  function setViewMode(mode) {
+    fileManager.viewMode = mode
+    gridBtn?.classList.toggle('is-active', mode === 'grid')
+    listBtn?.classList.toggle('is-active', mode === 'list')
+    if (grid) {
+      grid.classList.toggle('view-mode-grid', mode === 'grid')
+      grid.classList.toggle('view-mode-list', mode === 'list')
+    }
+  }
+
+  gridBtn?.addEventListener('click', () => setViewMode('grid'))
+  listBtn?.addEventListener('click', () => setViewMode('list'))
+
+  // Floating Selection Bar Action Handlers
+  document.getElementById('selection-download-btn')?.addEventListener('click', downloadSelected)
+  document.getElementById('selection-delete-btn')?.addEventListener('click', deleteSelected)
+  document.getElementById('selection-cancel-btn')?.addEventListener('click', () => {
+    document.querySelectorAll('.file-card.is-selected').forEach((c) => c.classList.remove('is-selected'))
+    recomputeSelected()
+    updateManageToolbar()
+  })
+
+  // Search input & clear button
+  const searchInput = document.getElementById('manage-search-input')
+  const searchClearBtn = document.getElementById('manage-search-clear')
+  searchInput?.addEventListener('input', (e) => {
+    fileManager.searchQuery = e.target.value.trim()
+    if (searchClearBtn) searchClearBtn.hidden = !fileManager.searchQuery
+    renderFileManager()
+  })
+  searchClearBtn?.addEventListener('click', () => {
+    if (searchInput) searchInput.value = ''
+    fileManager.searchQuery = ''
+    searchClearBtn.hidden = true
+    renderFileManager()
+  })
+
+  // Sort select
+  const sortSelect = document.getElementById('manage-sort-select')
+  sortSelect?.addEventListener('change', (e) => {
+    fileManager.sortBy = e.target.value
+    renderFileManager()
+  })
+
+  // Setup Delete Files Modal
+  const deleteFilesModal = document.getElementById('delete-files-modal')
+  const deleteFilesCancelBtn = document.getElementById('delete-files-cancel-btn')
+  const deleteFilesConfirmBtn = document.getElementById('delete-files-confirm-btn')
+
+  deleteFilesCancelBtn?.addEventListener('click', hideDeleteFilesModal)
+  deleteFilesModal?.addEventListener('click', (e) => {
+    if (e.target === deleteFilesModal) hideDeleteFilesModal()
+  })
+  deleteFilesConfirmBtn?.addEventListener('click', confirmDeleteFilesAction)
+
+  // Keyboard shortcut: Delete or Backspace key to trigger delete on selected items
+  window.addEventListener('keydown', (e) => {
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+      const activeTab = document.querySelector('.tab-btn.is-active')?.dataset?.tab
+      if (activeTab === 'manage' && fileManager.selected.size > 0) {
+        const tag = document.activeElement?.tagName
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+          e.preventDefault()
+          deleteSelected()
+        }
+      }
+    }
+  })
+
+  setupLassoSelection(grid)
+}
+
+async function refreshFileManager(force = false) {
+  if (fileManager.loading) return
+  if (fileManager.loaded && !force) return
+  fileManager.loading = true
+  try {
+    const res = await fetch('/api/files', { credentials: 'same-origin' })
+    if (res.status === 401) {
+      // Session expired; let the user re-login from the top of the page.
+      window.location.reload()
+      return
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    fileManager.files = Array.isArray(data.files) ? data.files : []
+    fileManager.lastData = data
+    fileManager.loaded = true
+    renderFileManager(data)
+  } catch (err) {
+    console.error('Load file list failed', err)
+    showToast('加载文件列表失败，请重试', 'error')
+  } finally {
+    fileManager.loading = false
+  }
+}
+
+function getFilteredAndSortedFiles() {
+  let list = [...fileManager.files]
+  if (fileManager.searchQuery) {
+    const q = fileManager.searchQuery.toLowerCase()
+    list = list.filter((f) => {
+      const name = (f.filename || '').toLowerCase()
+      const type = (f.contentType || '').toLowerCase()
+      return name.includes(q) || type.includes(q)
+    })
+  }
+
+  switch (fileManager.sortBy) {
+    case 'created-asc':
+      list.sort((a, b) => (a.created || 0) - (b.created || 0))
+      break
+    case 'name-asc':
+      list.sort((a, b) => (a.filename || '').localeCompare(b.filename || '', 'zh-CN'))
+      break
+    case 'name-desc':
+      list.sort((a, b) => (b.filename || '').localeCompare(a.filename || '', 'zh-CN'))
+      break
+    case 'size-desc':
+      list.sort((a, b) => (b.size || 0) - (a.size || 0))
+      break
+    case 'size-asc':
+      list.sort((a, b) => (a.size || 0) - (b.size || 0))
+      break
+    case 'expires-asc':
+      list.sort((a, b) => (a.expires || Infinity) - (b.expires || Infinity))
+      break
+    case 'created-desc':
+    default:
+      list.sort((a, b) => (b.created || 0) - (a.created || 0))
+      break
+  }
+  return list
+}
+
+function getFileTypeTheme(filename = '', mimeType = '') {
+  const ext = filename.split('.').pop()?.toLowerCase() || ''
+  if (/image|png|jpg|jpeg|gif|webp|svg/i.test(mimeType) || ['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg'].includes(ext)) {
+    return {
+      category: 'image',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2.5" ry="2.5"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>`,
+    }
+  }
+  if (/video|mp4|webm|mkv|avi/i.test(mimeType) || ['mp4', 'webm', 'mkv', 'mov', 'avi'].includes(ext)) {
+    return {
+      category: 'video',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`,
+    }
+  }
+  if (/audio|mp3|wav|flac|ogg/i.test(mimeType) || ['mp3', 'wav', 'flac', 'm4a', 'aac'].includes(ext)) {
+    return {
+      category: 'audio',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>`,
+    }
+  }
+  if (/pdf|document|word|text|md|txt/i.test(mimeType) || ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf'].includes(ext)) {
+    return {
+      category: 'document',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>`,
+    }
+  }
+  if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext)) {
+    return {
+      category: 'archive',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V3h10l8 5z"/><path d="M10 12h4"/><path d="M10 16h4"/></svg>`,
+    }
+  }
+  if (['js', 'ts', 'go', 'py', 'java', 'c', 'cpp', 'html', 'css', 'json', 'sh', 'sql'].includes(ext)) {
+    return {
+      category: 'code',
+      icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>`,
+    }
+  }
+  return {
+    category: 'default',
+    icon: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>`,
+  }
+}
+
+function renderFileManager(data = fileManager.lastData) {
+  if (data) fileManager.lastData = data
+  const grid = document.getElementById('file-grid')
+  const empty = document.getElementById('manage-empty')
+  const emptyText = document.getElementById('manage-empty-text')
+  if (!grid) return
+
+  // Reset selection state for the new list.
+  fileManager.selected.clear()
+  fileManager.lastAnchor = null
+
+  grid.querySelectorAll('.file-card').forEach((el) => el.remove())
+
+  const summary = document.getElementById('manage-summary')
+  const usage = document.getElementById('pill-storage-usage')
+  const retention = document.getElementById('pill-retention-mg')
+  const countBadge = document.getElementById('manage-count')
+
+  if (!fileManager.files.length) {
+    if (empty) {
+      empty.hidden = false
+      empty.style.display = 'flex'
+    }
+    if (emptyText) emptyText.textContent = '服务器上暂无文件，点击上传文件或刷新'
+    if (summary) summary.textContent = '服务器上暂无文件'
+    if (usage) usage.innerHTML = '已用 <strong>0 B</strong>'
+    if (countBadge) countBadge.hidden = true
+    updateManageToolbar()
+    return
+  }
+
+  const displayedFiles = getFilteredAndSortedFiles()
+
+  if (!displayedFiles.length) {
+    if (empty) {
+      empty.hidden = false
+      empty.style.display = 'flex'
+    }
+    if (emptyText) emptyText.textContent = `未找到与 「${fileManager.searchQuery}」 匹配的文件`
+  } else {
+    if (empty) {
+      empty.hidden = true
+      empty.style.display = 'none'
+    }
+    for (const file of displayedFiles) {
+      grid.appendChild(renderFileCard(file))
+    }
+  }
+
+  const totalBytes = fileManager.lastData?.totalBytes || 0
+  if (summary) {
+    if (fileManager.searchQuery) {
+      summary.textContent = `匹配 ${displayedFiles.length} / 共 ${fileManager.files.length} 个文件`
+    } else {
+      summary.textContent = `共 ${fileManager.files.length} 个文件`
+    }
+  }
+  if (usage) usage.innerHTML = `已用 <strong>${formatBytes(totalBytes)}</strong>`
+  if (retention) retention.innerHTML = `保留 <strong>${fileManager.lastData?.retention || '-'}</strong>`
+  if (countBadge) {
+    countBadge.hidden = false
+    countBadge.textContent = fileManager.files.length
+  }
+  updateManageToolbar()
+}
+
+function renderFileCard(file) {
+  const card = document.createElement('article')
+  card.className = 'file-card'
+  card.setAttribute('role', 'listitem')
+  card.dataset.id = file.id
+  card.tabIndex = 0
+
+  const theme = getFileTypeTheme(file.filename, file.contentType)
+  card.dataset.category = theme.category
+
+  const isImage = theme.category === 'image'
+
+  let icon
+  if (isImage && file.downloadUrl) {
+    icon = document.createElement('div')
+    icon.className = 'file-card-thumb-wrap'
+    const img = document.createElement('img')
+    img.className = 'file-card-thumb'
+    img.src = file.downloadUrl
+    img.alt = file.filename || ''
+    img.loading = 'lazy'
+    img.onerror = () => {
+      icon.className = 'file-card-icon'
+      icon.innerHTML = theme.icon
+    }
+    icon.appendChild(img)
+  } else {
+    icon = document.createElement('div')
+    icon.className = 'file-card-icon'
+    icon.innerHTML = theme.icon
+  }
+
+  const body = document.createElement('div')
+  body.className = 'file-card-body'
+
+  const name = document.createElement('span')
+  name.className = 'file-card-name'
+  name.textContent = file.filename || '未命名文件'
+  name.title = file.filename || ''
+
+  const expiryInfo = formatExpiryInfo(file)
+
+  const meta = document.createElement('span')
+  meta.className = 'file-card-meta'
+  meta.innerHTML = `${formatBytes(file.size)}${expiryInfo.text ? ` · <span class="expiry-badge ${expiryInfo.level}">${expiryInfo.text}</span>` : ''}`
+
+  body.append(name, meta)
+
+  const actions = document.createElement('div')
+  actions.className = 'file-card-actions'
+
+  const dlBtn = document.createElement('button')
+  dlBtn.type = 'button'
+  dlBtn.className = 'btn-icon-action'
+  dlBtn.innerHTML = svgIcon('download')
+  dlBtn.title = '下载文件'
+  dlBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (file.downloadUrl) triggerDownload(file.downloadUrl)
+  })
+
+  const copyBtn = document.createElement('button')
+  copyBtn.type = 'button'
+  copyBtn.className = 'btn-icon-action'
+  copyBtn.innerHTML = svgIcon('copy')
+  copyBtn.title = '复制下载链接'
+  copyBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    if (file.downloadUrl) {
+      copyToClipboard(file.downloadUrl)
+      showToast('已复制文件下载链接', 'success')
+    }
+  })
+
+  const delBtn = document.createElement('button')
+  delBtn.type = 'button'
+  delBtn.className = 'btn-icon-action btn-danger-action'
+  delBtn.innerHTML = svgIcon('trash')
+  delBtn.title = '从服务器删除'
+  delBtn.addEventListener('click', (e) => {
+    e.stopPropagation()
+    openDeleteFilesModal([file.id])
+  })
+
+  actions.append(dlBtn, copyBtn, delBtn)
+
+  // Selection checkbox
+  const check = document.createElement('span')
+  check.className = 'file-card-check'
+  check.innerHTML = svgIcon('check')
+
+  card.append(check, icon, body, actions)
+
+  // Mobile Touch & Long-Press (长按 450ms) gesture support
+  let longPressTimer = null
+  let touchStartX = 0
+  let touchStartY = 0
+  let isLongPress = false
+
+  card.addEventListener('touchstart', (e) => {
+    if (e.target.closest('button')) return
+    touchStartX = e.touches[0].clientX
+    touchStartY = e.touches[0].clientY
+    isLongPress = false
+
+    longPressTimer = setTimeout(() => {
+      isLongPress = true
+      if (navigator.vibrate) navigator.vibrate(40)
+      card.classList.add('is-selected')
+      fileManager.lastAnchor = file.id
+      recomputeSelected()
+      updateManageToolbar()
+      showToast(`已选中文件 「${file.filename || ''}」`, 'info')
+    }, 450)
+  }, { passive: true })
+
+  card.addEventListener('touchmove', (e) => {
+    if (!longPressTimer) return
+    const dx = Math.abs(e.touches[0].clientX - touchStartX)
+    const dy = Math.abs(e.touches[0].clientY - touchStartY)
+    if (dx > 8 || dy > 8) {
+      clearTimeout(longPressTimer)
+      longPressTimer = null
+    }
+  }, { passive: true })
+
+  card.addEventListener('touchend', () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer)
+      longPressTimer = null
+    }
+  }, { passive: true })
+
+  card.addEventListener('touchcancel', () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer)
+      longPressTimer = null
+    }
+  }, { passive: true })
+
+  card.addEventListener('click', (e) => {
+    if (e.target.closest('button')) return
+    if (isLongPress) {
+      e.stopPropagation()
+      isLongPress = false
+      return
+    }
+    toggleSelect(card, e.shiftKey, e.ctrlKey || e.metaKey)
+  })
+  card.addEventListener('keydown', (e) => {
+    if (e.key === ' ' || e.key === 'Enter') {
+      e.preventDefault()
+      toggleSelect(card, e.shiftKey, e.ctrlKey || e.metaKey)
+    }
+  })
+
+  return card
+}
+
+function formatExpiryInfo(file) {
+  if (!file.expires) return { text: '', level: 'normal' }
+  const diff = file.expires - Math.floor(Date.now() / 1000)
+  if (diff <= 0) return { text: '已过期', level: 'expired' }
+  if (diff < 3600) {
+    const m = Math.max(1, Math.round(diff / 60))
+    return { text: `${m} 分钟后过期`, level: 'warning' }
+  }
+  if (diff < 86400) {
+    const h = Math.round(diff / 3600)
+    return { text: `${h} 小时后过期`, level: 'normal' }
+  }
+  const d = Math.round(diff / 86400)
+  return { text: `${d} 天后过期`, level: 'normal' }
+}
+
+function toggleSelect(card, shift, ctrl) {
+  const id = card.dataset.id
+  if (shift && fileManager.lastAnchor) {
+    const cards = [...document.querySelectorAll('.file-card')]
+    const a = cards.findIndex((c) => c.dataset.id === fileManager.lastAnchor)
+    const b = cards.findIndex((c) => c.dataset.id === id)
+    if (a >= 0 && b >= 0) {
+      const [from, to] = a < b ? [a, b] : [b, a]
+      for (let i = from; i <= to; i++) cards[i].classList.add('is-selected')
+      recomputeSelected()
+      updateManageToolbar()
+      return
+    }
+  }
+  if (ctrl) {
+    card.classList.toggle('is-selected')
+  } else if (card.classList.contains('is-selected') && fileManager.selected.size === 1) {
+    card.classList.remove('is-selected')
+  } else {
+    // Single click without modifier: select only this one.
+    document.querySelectorAll('.file-card.is-selected').forEach((c) => c.classList.remove('is-selected'))
+    card.classList.add('is-selected')
+  }
+  if (card.classList.contains('is-selected')) fileManager.lastAnchor = id
+  recomputeSelected()
+  updateManageToolbar()
+}
+
+function recomputeSelected() {
+  fileManager.selected.clear()
+  document.querySelectorAll('.file-card.is-selected').forEach((c) => fileManager.selected.add(c.dataset.id))
+}
+
+function toggleSelectAll() {
+  const cards = document.querySelectorAll('.file-card')
+  if (!cards.length) return
+  const allSelected = [...cards].every((c) => c.classList.contains('is-selected'))
+  cards.forEach((c) => c.classList.toggle('is-selected', !allSelected))
+  recomputeSelected()
+  updateManageToolbar()
+}
+
+function updateManageToolbar() {
+  const n = fileManager.selected.size
+  const dlBtn = document.getElementById('manage-download-btn')
+  const delBtn = document.getElementById('manage-delete-btn')
+  const selectAll = document.getElementById('manage-select-all-btn')
+  if (dlBtn) dlBtn.disabled = n === 0
+  if (delBtn) {
+    delBtn.disabled = n === 0
+    delBtn.textContent = n > 0 ? `批量删除 (${n})` : '批量删除'
+  }
+  const total = fileManager.files.length
+  if (selectAll) selectAll.textContent = total > 0 && n === total ? '取消全选' : '全选'
+
+  // Update floating selection action bar for mobile & touch!
+  const floatBar = document.getElementById('selection-action-bar')
+  const floatInfo = document.getElementById('selection-action-info')
+  if (floatBar) {
+    if (n > 0) {
+      floatBar.hidden = false
+      floatBar.setAttribute('aria-hidden', 'false')
+      if (floatInfo) floatInfo.textContent = `已选中 ${n} 个文件`
+    } else {
+      floatBar.hidden = true
+      floatBar.setAttribute('aria-hidden', 'true')
+    }
+  }
+}
+
+function downloadSelected() {
+  const ids = [...fileManager.selected]
+  if (!ids.length) return
+  const url = `/api/files/archive?ids=${ids.map(encodeURIComponent).join(',')}`
+  triggerDownload(url)
+  showToast(`正在打包下载 ${ids.length} 个文件…`, 'info')
+}
+
+function triggerDownload(url) {
+  const a = document.createElement('a')
+  a.href = url
+  a.download = ''
+  a.rel = 'noopener'
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+}
+
+function deleteSelected() {
+  const ids = [...fileManager.selected]
+  if (!ids.length) return
+  openDeleteFilesModal(ids)
+}
+
+function openDeleteFilesModal(ids) {
+  activeDeleteFileIds = ids
+  const modal = document.getElementById('delete-files-modal')
+  const title = document.getElementById('delete-files-title')
+  const desc = document.getElementById('delete-files-desc')
+  const preview = document.getElementById('delete-files-preview')
+  const confirmBtn = document.getElementById('delete-files-confirm-btn')
+
+  if (!modal || !preview || !confirmBtn) return
+
+  confirmBtn.disabled = false
+  confirmBtn.textContent = '确认删除'
+
+  const targets = fileManager.files.filter((f) => ids.includes(f.id))
+  const count = targets.length
+
+  if (title) title.textContent = count === 1 ? '确认删除文件？' : `确认批量删除 ${count} 个文件？`
+  if (desc) desc.textContent = count === 1
+    ? `您即将从服务器彻底删除「${targets[0]?.filename || '此文件'}」，删除后无法恢复。`
+    : `您即将从服务器彻底删除选中的 ${count} 个文件，此操作不可撤销。`
+
+  // Build preview list HTML
+  preview.innerHTML = ''
+  const showItems = targets.slice(0, 5)
+  showItems.forEach((f) => {
+    const item = document.createElement('div')
+    item.className = 'delete-preview-item'
+    item.innerHTML = `
+      ${getFileTypeIcon(f.filename, f.contentType)}
+      <span class="delete-preview-name">${f.filename || '未命名文件'}</span>
+      <span class="delete-preview-size">${formatBytes(f.size)}</span>
+    `
+    preview.appendChild(item)
+  })
+
+  if (targets.length > 5) {
+    const more = document.createElement('div')
+    more.className = 'delete-preview-more'
+    more.textContent = `等共 ${targets.length} 个文件`
+    preview.appendChild(more)
+  }
+
+  modal.classList.add('is-active')
+  modal.setAttribute('aria-hidden', 'false')
+}
+
+function hideDeleteFilesModal() {
+  const modal = document.getElementById('delete-files-modal')
+  if (!modal) return
+  modal.classList.remove('is-active')
+  modal.setAttribute('aria-hidden', 'true')
+  activeDeleteFileIds = []
+}
+
+async function confirmDeleteFilesAction() {
+  if (!activeDeleteFileIds.length) return
+  const confirmBtn = document.getElementById('delete-files-confirm-btn')
+  if (confirmBtn) {
+    confirmBtn.disabled = true
+    confirmBtn.textContent = '正在删除…'
+  }
+  await performDeleteFiles(activeDeleteFileIds)
+  hideDeleteFilesModal()
+}
+
+async function performDeleteFiles(ids) {
+  try {
+    const res = await fetch('/api/files/delete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ ids }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.error || `HTTP ${res.status}`)
+    }
+    const result = await res.json()
+    const removed = result.removed || 0
+    showToast(`已成功删除 ${removed} 个文件`, 'success')
+    // Reload the list from the server to stay in sync.
+    fileManager.loaded = false
+    refreshFileManager(true)
+  } catch (err) {
+    console.error('Batch delete failed', err)
+    showToast(`删除失败：${err.message}`, 'error')
+  }
+}
+
+// ---- Lasso (rubber-band) selection -----------------------------------------
+
+function setupLassoSelection(grid) {
+  const box = document.getElementById('lasso-box')
+  const container = grid.parentElement
+  if (!box || !container) return
+
+  let dragging = false
+  let startX = 0
+  let startY = 0
+  let baseSelection = new Set()
+
+  const pointFrom = (e) => {
+    const rect = container.getBoundingClientRect()
+    const cx = e.touches ? e.touches[0].clientX : e.clientX
+    const cy = e.touches ? e.touches[0].clientY : e.clientY
+    return { x: cx - rect.left, y: cy - rect.top }
+  }
+
+  const onDown = (e) => {
+    // Only start a lasso on empty grid space (not on a card/button).
+    if (e.target.closest('.file-card')) return
+    if (e.button !== undefined && e.button !== 0) return
+    const p = pointFrom(e)
+    dragging = true
+    startX = p.x
+    startY = p.y
+    // Snapshot the current selection so shift/ctrl-free lasso toggles within it.
+    baseSelection = new Set(fileManager.selected)
+    box.hidden = false
+    box.style.left = `${p.x}px`
+    box.style.top = `${p.y}px`
+    box.style.width = '0px'
+    box.style.height = '0px'
+    if (e.cancelable) e.preventDefault()
+  }
+
+  const onMove = (e) => {
+    if (!dragging) return
+    const p = pointFrom(e)
+    const x = Math.min(p.x, startX)
+    const y = Math.min(p.y, startY)
+    const w = Math.abs(p.x - startX)
+    const h = Math.abs(p.y - startY)
+    box.style.left = `${x}px`
+    box.style.top = `${y}px`
+    box.style.width = `${w}px`
+    box.style.height = `${h}px`
+    selectIntersecting(x, y, w, h)
+    if (e.cancelable) e.preventDefault()
+  }
+
+  const onUp = () => {
+    if (!dragging) return
+    dragging = false
+    box.hidden = true
+    recomputeSelected()
+    updateManageToolbar()
+  }
+
+  const selectIntersecting = (x, y, w, h) => {
+    const containerRect = container.getBoundingClientRect()
+    document.querySelectorAll('.file-card').forEach((card) => {
+      const r = card.getBoundingClientRect()
+      const cx = r.left - containerRect.left
+      const cy = r.top - containerRect.top
+      const cw = r.width
+      const ch = r.height
+      const intersects = !(cx > x + w || cx + cw < x || cy > y + h || cy + ch < y)
+      const id = card.dataset.id
+      if (intersects) {
+        card.classList.add('is-selected')
+      } else if (!baseSelection.has(id)) {
+        card.classList.remove('is-selected')
+      }
+    })
+  }
+
+  container.addEventListener('mousedown', onDown)
+  window.addEventListener('mousemove', onMove)
+  window.addEventListener('mouseup', onUp)
+  container.addEventListener('touchstart', onDown, { passive: false })
+  window.addEventListener('touchmove', onMove, { passive: false })
+  window.addEventListener('touchend', onUp)
 }
 
 function zhLocale() {

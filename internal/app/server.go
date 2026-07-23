@@ -20,6 +20,7 @@ func NewServer(ctx context.Context, cfg config.Config, webFS fs.FS) (*http.Serve
 		return nil, err
 	}
 	go svc.reapTusLoop(ctx)
+	go svc.cleanupLoop(ctx)
 
 	if err := svc.cleanup(ctx); err != nil {
 		return nil, err

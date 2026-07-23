@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,9 +24,43 @@ import (
 type record struct {
 	ID          string    `json:"id"`
 	ObjectKey   string    `json:"object_key"`
+	Filename    string    `json:"filename,omitempty"`
 	ContentType string    `json:"content_type"`
 	Size        int64     `json:"size"`
 	Created     time.Time `json:"created"`
+	Expires     time.Time `json:"expires,omitempty"`
+}
+
+// sanitizedFilename normalizes a client-supplied filename for safe storage and
+// display. It strips path separators, trims whitespace, and falls back to a
+// generic name so the file manager always has something to show.
+func sanitizedFilename(name, contentType string) string {
+	if name != "" {
+		// Keep only the final path component; clients may send "C:\foo\bar.png".
+		name = filepath.Base(name)
+		// Reject control characters and path separators that survived Base.
+		name = strings.Map(func(r rune) rune {
+			if r < 0x20 || r == '/' || r == '\\' || r == ':' || r == '*' || r == '?' || r == '"' || r == '<' || r == '>' || r == '|' {
+				return '_'
+			}
+			return r
+		}, name)
+		name = strings.TrimSpace(name)
+	}
+	if name == "" {
+		ext := ""
+		if contentType != "" {
+			if exts, _ := mime.ExtensionsByType(contentType); len(exts) > 0 {
+				ext = exts[0]
+			}
+		}
+		name = "file" + ext
+	}
+	if len(name) > 255 {
+		ext := filepath.Ext(name)
+		name = name[:255-len(ext)] + ext
+	}
+	return name
 }
 
 // service owns the in-memory object index, the storage backend, and the

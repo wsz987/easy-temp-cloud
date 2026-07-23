@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -25,6 +26,9 @@ type blobStore interface {
 	Put(ctx context.Context, key, sourcePath, contentType string) error
 	Delete(ctx context.Context, key string) error
 	SignURL(key string, expires time.Duration) (string, error)
+	// Open returns a reader for the stored object's raw bytes. It is used by
+	// the file manager to stream objects into a zip archive for batch download.
+	Open(ctx context.Context, key string) (io.ReadCloser, error)
 }
 
 // localStore keeps objects as flat files named by their SHA-256 key under root.
@@ -66,6 +70,15 @@ func (s localStore) SignURL(_ string, _ time.Duration) (string, error) {
 	return "", errors.New("local storage does not use signed URLs")
 }
 
+// Open opens the stored object for reading. The caller must close the reader.
+func (s localStore) Open(_ context.Context, key string) (io.ReadCloser, error) {
+	path, err := s.path(key)
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(path)
+}
+
 // ossStore uploads objects to an Alibaba Cloud OSS bucket. Deduplication and
 // expiration are still managed by the service via the object index.
 type ossStore struct{ bucket *oss.Bucket }
@@ -78,4 +91,9 @@ func (s ossStore) Delete(_ context.Context, key string) error { return s.bucket.
 
 func (s ossStore) SignURL(key string, expires time.Duration) (string, error) {
 	return s.bucket.SignURL(key, oss.HTTPGet, int64(expires.Seconds()))
+}
+
+// Open downloads the object from OSS into a reader. The caller must close it.
+func (s ossStore) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	return s.bucket.GetObject(key, oss.WithContext(ctx))
 }

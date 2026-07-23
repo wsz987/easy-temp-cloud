@@ -100,7 +100,8 @@ func (s *service) finishTusUpload(event handler.HookEvent) (handler.HTTPResponse
 			err = fmt.Errorf("content type %q is not allowed (allowed types: %s)", contentType, s.policy)
 		} else {
 			id := fmt.Sprintf("%x", hash)
-			created, _, persistErr := s.persist(event.Context, id, path, contentType, size, event.Upload.Size)
+			filename := event.Upload.MetaData["filename"]
+			created, _, persistErr := s.persist(event.Context, id, path, contentType, filename, size, event.Upload.Size)
 			if persistErr != nil {
 				err = persistErr
 			} else {

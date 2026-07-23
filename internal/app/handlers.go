@@ -37,14 +37,14 @@ func (s *service) upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer s.release(reservation)
-	filePath, contentType, size, id, err := s.readUpload(r)
+	filePath, contentType, size, id, filename, err := s.readUpload(r)
 	if err != nil {
 		writeUploadError(w, err)
 		return
 	}
 	defer os.Remove(filePath)
 
-	created, duplicate, err := s.persist(r.Context(), id, filePath, contentType, size, reservation)
+	created, duplicate, err := s.persist(r.Context(), id, filePath, contentType, filename, size, reservation)
 	if err != nil {
 		log.Printf("upload %s: %v", id, err)
 		writeStorageError(w, err)
@@ -63,10 +63,10 @@ func (s *service) upload(w http.ResponseWriter, r *http.Request) {
 
 // readUpload extracts the "file" form part, streams it to disk, detects its
 // content type from magic bytes, and computes the SHA-256 content key.
-func (s *service) readUpload(r *http.Request) (string, string, int64, string, error) {
+func (s *service) readUpload(r *http.Request) (string, string, int64, string, string, error) {
 	mediaType, parameters, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || mediaType != "multipart/form-data" {
-		return "", "", 0, "", errors.New("Content-Type must be multipart/form-data")
+		return "", "", 0, "", "", errors.New("Content-Type must be multipart/form-data")
 	}
 	reader := multipart.NewReader(r.Body, parameters["boundary"])
 	for {
@@ -75,30 +75,32 @@ func (s *service) readUpload(r *http.Request) (string, string, int64, string, er
 			break
 		}
 		if err != nil {
-			return "", "", 0, "", fmt.Errorf("read multipart body: %w", err)
+			return "", "", 0, "", "", fmt.Errorf("read multipart body: %w", err)
 		}
 		if part.FormName() != "file" || part.FileName() == "" {
 			part.Close()
 			continue
 		}
-		return s.writePart(part)
+		filename := part.FileName()
+		return s.writePart(part, filename)
 	}
-	return "", "", 0, "", errors.New("multipart field file is required")
+	return "", "", 0, "", "", errors.New("multipart field file is required")
 }
 
 // writePart copies one multipart part into a temp file, hashing it along the
 // way, then probes the first 512 bytes to detect the content type and enforce
 // the configured type policy.
-func (s *service) writePart(part *multipart.Part) (string, string, int64, string, error) {
+func (s *service) writePart(part *multipart.Part, filename string) (string, string, int64, string, string, error) {
+	defer part.Close()
 	temp, err := os.CreateTemp(filepath.Join(s.config.DataDir, "tmp"), "upload-*")
 	if err != nil {
-		return "", "", 0, "", err
+		return "", "", 0, "", "", err
 	}
 	path := temp.Name()
-	cleanup := func(err error) (string, string, int64, string, error) {
+	cleanup := func(err error) (string, string, int64, string, string, error) {
 		temp.Close()
 		os.Remove(path)
-		return "", "", 0, "", err
+		return "", "", 0, "", "", err
 	}
 	hash := sha256.New()
 	written, err := io.Copy(io.MultiWriter(temp, hash), io.LimitReader(part, s.config.MaxUploadBytes+1))
@@ -113,18 +115,18 @@ func (s *service) writePart(part *multipart.Part) (string, string, int64, string
 	}
 	if err := temp.Close(); err != nil {
 		os.Remove(path)
-		return "", "", 0, "", err
+		return "", "", 0, "", "", err
 	}
 	contentType, err := detectContentType(path)
 	if err != nil {
 		os.Remove(path)
-		return "", "", 0, "", err
+		return "", "", 0, "", "", err
 	}
 	if !s.policy.Allows(contentType) {
 		os.Remove(path)
-		return "", "", 0, "", fmt.Errorf("content type %q is not allowed (allowed types: %s)", contentType, s.policy)
+		return "", "", 0, "", "", fmt.Errorf("content type %q is not allowed (allowed types: %s)", contentType, s.policy)
 	}
-	return path, contentType, written, hex.EncodeToString(hash.Sum(nil)), nil
+	return path, contentType, written, hex.EncodeToString(hash.Sum(nil)), filename, nil
 }
 
 // file serves a stored object (local storage only). OSS objects are served from

@@ -17,7 +17,7 @@ var (
 // If an object with the same SHA-256 already exists it returns the existing
 // record as a duplicate without re-writing it. The caller must have reserved
 // `reservation` bytes and is responsible for releasing them afterwards.
-func (s *service) persist(ctx context.Context, id, sourcePath, contentType string, size, reservation int64) (record, bool, error) {
+func (s *service) persist(ctx context.Context, id, sourcePath, contentType, filename string, size, reservation int64) (record, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.cleanupLocked(ctx, time.Now().Add(-s.config.Retention)); err != nil {
@@ -34,7 +34,8 @@ func (s *service) persist(ctx context.Context, id, sourcePath, contentType strin
 	if s.config.Driver == "oss" {
 		objectKey = ossObjectPrefix + id
 	}
-	created := record{ID: id, ObjectKey: objectKey, ContentType: contentType, Size: size, Created: time.Now().UTC()}
+	now := time.Now().UTC()
+	created := record{ID: id, ObjectKey: objectKey, Filename: sanitizedFilename(filename, contentType), ContentType: contentType, Size: size, Created: now, Expires: now.Add(s.config.Retention)}
 	if err := s.store.Put(ctx, created.ObjectKey, sourcePath, contentType); err != nil {
 		return record{}, false, err
 	}
